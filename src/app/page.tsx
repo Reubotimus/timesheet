@@ -362,10 +362,9 @@ export default function TimeTracker() {
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="center">
                 <Calendar
-                  mode="single"
                   selected={selectedDate}
                   onSelect={(date) => date && setSelectedDate(date)}
-                  initialFocus
+                  className="rounded-md border"
                 />
               </PopoverContent>
             </Popover>
@@ -440,51 +439,53 @@ export default function TimeTracker() {
       </div>
 
       {/* Edit Sidebar */}
-      <div className="w-80 border-l border-gray-200 bg-white p-4 overflow-y-auto">
-        <h2 className="text-xl font-semibold mb-4">Task Details</h2>
+      <div className="w-80 border-l border-gray-200 bg-white p-4 overflow-y-auto sticky top-0 h-screen flex flex-col">
+        <div className="flex-1 flex flex-col justify-center">
+          <h2 className="text-xl font-semibold mb-4">Task Details</h2>
 
-        {selectedTask ? (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <Input
-                ref={titleInputRef}
-                placeholder="Task title"
-                value={selectedTask.title}
-                onChange={(e) => updateTask(selectedTask.id, { title: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="w-4 h-4 text-gray-500" />
-                <span>
-                  {formatTime(selectedTask.startSlot)} - {formatTime(selectedTask.endSlot)}
-                </span>
+          {selectedTask ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <Input
+                  ref={titleInputRef}
+                  placeholder="Task title"
+                  value={selectedTask.title}
+                  onChange={(e) => updateTask(selectedTask.id, { title: e.target.value })}
+                />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <Textarea
-                placeholder="Add description"
-                value={selectedTask.description}
-                onChange={(e) => updateTask(selectedTask.id, { description: e.target.value })}
-                rows={5}
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span>
+                    {formatTime(selectedTask.startSlot)} - {formatTime(selectedTask.endSlot)}
+                  </span>
+                </div>
+              </div>
 
-            <Button variant="destructive" className="w-full mt-4" onClick={() => deleteTask(selectedTask.id)}>
-              <Trash2 className="w-4 h-4 mr-2" /> Delete Task
-            </Button>
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            <AlignLeft className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>Select a task to edit or create a new one</p>
-          </div>
-        )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <Textarea
+                  placeholder="Add description"
+                  value={selectedTask.description}
+                  onChange={(e) => updateTask(selectedTask.id, { description: e.target.value })}
+                  rows={5}
+                />
+              </div>
+
+              <Button variant="destructive" className="w-full mt-4" onClick={() => deleteTask(selectedTask.id)}>
+                <Trash2 className="w-4 h-4 mr-2" /> Delete Task
+              </Button>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <AlignLeft className="w-12 h-12 mx-auto mb-2 opacity-30" />
+              <p>Select a task to edit or create a new one</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
