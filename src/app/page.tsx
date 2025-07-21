@@ -25,6 +25,7 @@ import {
 import { format, addDays, subDays } from "date-fns";
 import HarvestTaskPanel from "@/components/HarvestTaskPanel";
 import type { HarvestTaskItem } from "@/lib/harvest-forecast";
+import { useSession, signIn, signOut } from "next-auth/react";
 
 interface Task {
   id: string;
@@ -65,6 +66,9 @@ const COLORS = [
 const LOCAL_STORAGE_KEY = "time-tracker-tasks";
 
 export default function TimeTracker() {
+  const { data: session, status } = useSession();
+
+  // All hooks must be called here, before any return!
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -79,7 +83,7 @@ export default function TimeTracker() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [ctrlPressed, setCtrlPressed] = useState(false);
 
-  // Load tasks from localStorage on initial render
+  // All useEffect and useCallback hooks must also be at the top level
   useEffect(() => {
     const savedTasks = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedTasks) {
@@ -91,37 +95,24 @@ export default function TimeTracker() {
     }
   }, []);
 
-  // Save tasks to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
   }, [tasks]);
 
-  // Filter tasks for selected date
-  const filteredTasks = tasks.filter(
-    (task) => task.date === format(selectedDate, "yyyy-MM-dd")
-  );
-
-  const handlePreviousDay = () => {
-    setSelectedDate((prev) => subDays(prev, 1));
-  };
-
-  const handleNextDay = () => {
-    setSelectedDate((prev) => addDays(prev, 1));
-  };
-
-  // Generate time slots from 7 AM to 12 AM (68 slots of 15 minutes each)
-  const timeSlots = Array.from({ length: 68 }, (_, i) => {
-    const totalMinutes = 7 * 60 + i * 15;
-    const hours = Math.floor(totalMinutes / 60) % 24;
-    const minutes = totalMinutes % 60;
-    const period = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-    return `${displayHours}:${minutes.toString().padStart(2, "0")} ${period}`;
-  });
-
-  const formatTime = (slot: number) => {
-    return timeSlots[slot] || "";
-  };
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control') setCtrlPressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') setCtrlPressed(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   const getSlotFromY = useCallback((y: number) => {
     if (!gridRef.current) return 0;
@@ -132,7 +123,7 @@ export default function TimeTracker() {
   }, []);
 
   const isSlotOccupied = (slot: number, excludeTaskId?: string) => {
-    return filteredTasks.some(
+    return tasks.some(
       (task) =>
         task.id !== excludeTaskId &&
         slot >= task.startSlot &&
@@ -144,7 +135,7 @@ export default function TimeTracker() {
     e.preventDefault();
 
     // Check if clicking on an existing task
-    const clickedTask = filteredTasks.find(
+    const clickedTask = tasks.find(
       (task) => slot >= task.startSlot && slot < task.endSlot
     );
 
@@ -284,7 +275,7 @@ export default function TimeTracker() {
     // Handle click operation
     if (dragOperation.type === "click") {
       const slot = dragOperation.startPosition.slot;
-      const clickedTask = filteredTasks.find(
+      const clickedTask = tasks.find(
         (task) => slot >= task.startSlot && slot < task.endSlot
       );
 
@@ -296,7 +287,7 @@ export default function TimeTracker() {
           endSlot: slot + 1,
           title: "",
           description: "",
-          color: COLORS[filteredTasks.length % COLORS.length],
+          color: COLORS[tasks.length % COLORS.length],
           date: format(selectedDate, "yyyy-MM-dd"),
         };
         setTasks((prev) => [...prev, newTask]);
@@ -405,7 +396,7 @@ export default function TimeTracker() {
             endSlot,
             title: "",
             description: "",
-            color: COLORS[filteredTasks.length % COLORS.length],
+            color: COLORS[tasks.length % COLORS.length],
             date: format(selectedDate, "yyyy-MM-dd"),
           };
           setTasks((prev) => [...prev, newTask]);
@@ -422,21 +413,6 @@ export default function TimeTracker() {
       currentSlot: 0,
     });
   };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Control') setCtrlPressed(true);
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Control') setCtrlPressed(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
 
   const updateTask = (taskId: string, updates: Partial<Task>) => {
     setTasks((prev) =>
@@ -495,6 +471,58 @@ export default function TimeTracker() {
 
   const previewSlots = getPreviewSlots();
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+
+  // Filter tasks for selected date
+  const filteredTasks = tasks.filter(
+    (task) => task.date === format(selectedDate, "yyyy-MM-dd")
+  );
+
+  const handlePreviousDay = () => {
+    setSelectedDate((prev) => subDays(prev, 1));
+  };
+
+  const handleNextDay = () => {
+    setSelectedDate((prev) => addDays(prev, 1));
+  };
+
+  // Generate time slots from 7 AM to 12 AM (68 slots of 15 minutes each)
+  const timeSlots = Array.from({ length: 68 }, (_, i) => {
+    const totalMinutes = 7 * 60 + i * 15;
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
+    const period = hours >= 12 ? "PM" : "AM";
+    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+    return `${displayHours}:${minutes.toString().padStart(2, "0")} ${period}`;
+  });
+
+  const formatTime = (slot: number) => {
+    return timeSlots[slot] || "";
+  };
+
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-xl">Loading...</div>
+    );
+  }
+
+  if (!session) {
+    // Not signed in: show login page
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="bg-white p-8 rounded shadow-md flex flex-col items-center gap-6">
+          <h1 className="text-3xl font-bold mb-2">Welcome to Timesheet</h1>
+          <p className="text-gray-600 mb-4">Sign in with your Office 365 account to continue.</p>
+          <button
+            onClick={() => signIn("azure-ad")}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded shadow flex items-center gap-2"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="inline-block"><rect width="24" height="24" rx="4" fill="#0078D4"/><path d="M6.75 7.5H17.25V16.5H6.75V7.5Z" fill="white"/></svg>
+            Sign in with Office 365
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
