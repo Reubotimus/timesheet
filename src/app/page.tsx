@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
+  Building2,
 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -22,6 +23,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { format, addDays, subDays } from "date-fns";
+import HarvestTaskPanel from "@/components/HarvestTaskPanel";
+import type { HarvestTaskItem } from "@/lib/harvest-forecast";
 
 interface Task {
   id: string;
@@ -31,6 +34,8 @@ interface Task {
   description: string;
   color: string;
   date: string; // ISO date string
+  source?: 'local' | 'harvest'; // Track task source
+  harvestData?: HarvestTaskItem; // Store original Harvest data if applicable
 }
 
 type DragOperationType = "none" | "click" | "drag";
@@ -72,6 +77,7 @@ export default function TimeTracker() {
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const [ctrlPressed, setCtrlPressed] = useState(false);
 
   // Load tasks from localStorage on initial render
   useEffect(() => {
@@ -204,6 +210,7 @@ export default function TimeTracker() {
         currentSlot,
         distance,
         fromClickToDrag: dragOperation.type === "click" && distance > 5,
+        ctrlPressed,
       });
     }
 
@@ -220,6 +227,55 @@ export default function TimeTracker() {
       ...prev,
       currentSlot,
     }));
+  };
+
+  // Handle dropping Harvest tasks onto the calendar
+  const handleDrop = (e: React.DragEvent, targetSlot: number) => {
+    e.preventDefault();
+    
+    try {
+      const dragData = e.dataTransfer.getData('application/json');
+      const parsedData = JSON.parse(dragData);
+      
+      if (parsedData.type === 'harvest-task' && parsedData.task) {
+        const harvestTask = parsedData.task as HarvestTaskItem;
+        createTaskFromHarvest(harvestTask, targetSlot);
+      }
+    } catch (error) {
+      console.error('Error handling drop:', error);
+    }
+  };
+
+  const createTaskFromHarvest = (harvestTask: HarvestTaskItem, startSlot: number) => {
+    // Calculate end slot based on duration (convert hours to 15-minute slots)
+    const durationSlots = Math.ceil(harvestTask.duration * 4); // 4 slots per hour
+    const endSlot = Math.min(startSlot + durationSlots, 68); // Don't go beyond end of day
+
+    // Check if any slots are occupied
+    const hasConflict = Array.from(
+      { length: endSlot - startSlot },
+      (_, i) => startSlot + i
+    ).some((slot) => isSlotOccupied(slot));
+
+    if (hasConflict) {
+      alert('Cannot schedule task: time slot is already occupied');
+      return;
+    }
+
+    const newTask: Task = {
+      id: `harvest-local-${Date.now()}`,
+      startSlot,
+      endSlot,
+      title: harvestTask.title,
+      description: harvestTask.description,
+      color: 'bg-green-200 border-green-400', // Different color for Harvest tasks
+      date: format(selectedDate, "yyyy-MM-dd"),
+      source: 'harvest',
+      harvestData: harvestTask,
+    };
+
+    setTasks((prev) => [...prev, newTask]);
+    setSelectedTaskId(newTask.id);
   };
 
   const handleMouseUp = () => {
@@ -253,49 +309,77 @@ export default function TimeTracker() {
     // Handle drag operation
     else if (dragOperation.type === "drag") {
       if (dragOperation.resizingTask) {
-        // Resize existing task
-        setTasks((prev) =>
-          prev.map((task) => {
-            if (task.id !== dragOperation.resizingTask) return task;
-
-            if (dragOperation.resizeType === "start") {
-              const newStartSlot = Math.min(
-                dragOperation.currentSlot,
-                task.endSlot - 1
-              );
-              const finalStartSlot = Math.max(0, newStartSlot);
-
-              // Ensure we don't conflict with other tasks
-              let adjustedStartSlot = finalStartSlot;
-              while (
-                adjustedStartSlot < task.endSlot - 1 &&
-                isSlotOccupied(adjustedStartSlot, task.id)
-              ) {
-                adjustedStartSlot++;
+        if (ctrlPressed) {
+          // Move the task instead of resizing
+          setTasks((prev) =>
+            prev.map((task) => {
+              if (task.id !== dragOperation.resizingTask) return task;
+              const offset = dragOperation.currentSlot - dragOperation.startPosition.slot;
+              let newStart = (dragOperation.taskStartSlot ?? task.startSlot) + offset;
+              let newEnd = (dragOperation.taskEndSlot ?? task.endSlot) + offset;
+              // Clamp to calendar bounds
+              if (newStart < 0) {
+                newEnd += -newStart;
+                newStart = 0;
               }
-
-              return { ...task, startSlot: adjustedStartSlot };
-            } else {
-              const newEndSlot = Math.max(
-                dragOperation.currentSlot + 1,
-                task.startSlot + 1
-              );
-              const finalEndSlot = Math.min(68, newEndSlot);
-
-              // Check slots forward from the current position
-              let adjustedEndSlot = task.startSlot + 1;
-              while (
-                adjustedEndSlot <= finalEndSlot &&
-                !isSlotOccupied(adjustedEndSlot - 1, task.id)
-              ) {
-                adjustedEndSlot++;
+              if (newEnd > 68) {
+                newStart -= (newEnd - 68);
+                newEnd = 68;
               }
-              adjustedEndSlot--; // Step back one slot to the last valid position
+              // Prevent overlap
+              for (let slot = newStart; slot < newEnd; slot++) {
+                if (isSlotOccupied(slot, task.id)) {
+                  return task; // Abort move if conflict
+                }
+              }
+              return { ...task, startSlot: newStart, endSlot: newEnd };
+            })
+          );
+        } else {
+          // Resize existing task (default behavior)
+          setTasks((prev) =>
+            prev.map((task) => {
+              if (task.id !== dragOperation.resizingTask) return task;
 
-              return { ...task, endSlot: adjustedEndSlot };
-            }
-          })
-        );
+              if (dragOperation.resizeType === "start") {
+                const newStartSlot = Math.min(
+                  dragOperation.currentSlot,
+                  task.endSlot - 1
+                );
+                const finalStartSlot = Math.max(0, newStartSlot);
+
+                // Ensure we don't conflict with other tasks
+                let adjustedStartSlot = finalStartSlot;
+                while (
+                  adjustedStartSlot < task.endSlot - 1 &&
+                  isSlotOccupied(adjustedStartSlot, task.id)
+                ) {
+                  adjustedStartSlot++;
+                }
+
+                return { ...task, startSlot: adjustedStartSlot };
+              } else {
+                const newEndSlot = Math.max(
+                  dragOperation.currentSlot + 1,
+                  task.startSlot + 1
+                );
+                const finalEndSlot = Math.min(68, newEndSlot);
+
+                // Check slots forward from the current position
+                let adjustedEndSlot = task.startSlot + 1;
+                while (
+                  adjustedEndSlot <= finalEndSlot &&
+                  !isSlotOccupied(adjustedEndSlot - 1, task.id)
+                ) {
+                  adjustedEndSlot++;
+                }
+                adjustedEndSlot--; // Step back one slot to the last valid position
+
+                return { ...task, endSlot: adjustedEndSlot };
+              }
+            })
+          );
+        }
       } else {
         // Create new task
         const startSlot = Math.min(
@@ -338,6 +422,21 @@ export default function TimeTracker() {
       currentSlot: 0,
     });
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control') setCtrlPressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') setCtrlPressed(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   const updateTask = (taskId: string, updates: Partial<Task>) => {
     setTasks((prev) =>
@@ -433,7 +532,9 @@ export default function TimeTracker() {
         <Card className="p-6">
           <div
             ref={gridRef}
-            className="relative select-none"
+            className={
+              "relative select-none" + (ctrlPressed ? " cursor-move" : "")
+            }
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
@@ -444,6 +545,8 @@ export default function TimeTracker() {
                 key={index}
                 className="flex border-b border-gray-200 h-10 hover:bg-gray-50 cursor-crosshair"
                 onMouseDown={(e) => handleMouseDown(e, index)}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragOver={(e) => e.preventDefault()}
               >
                 <div className="w-20 text-sm text-gray-600 py-2 px-2 border-r border-gray-200 bg-gray-100">
                   {time}
@@ -512,6 +615,12 @@ export default function TimeTracker() {
 
       {/* Edit Sidebar */}
       <div className="w-80 border-l border-gray-200 bg-white p-4 overflow-y-auto sticky top-0 h-screen flex flex-col">
+        {/* Harvest Tasks Panel */}
+        <div className="mb-6">
+          <HarvestTaskPanel selectedDate={selectedDate} />
+        </div>
+
+        {/* Task Details Section */}
         <div className="flex-1 flex flex-col justify-center">
           <h2 className="text-xl font-semibold mb-4">Task Details</h2>
 
@@ -531,23 +640,49 @@ export default function TimeTracker() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Time
-                </label>
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="w-4 h-4 text-gray-500" />
-                  <span>
-                    {formatTime(selectedTask.startSlot)} -{" "}
-                    {formatTime(selectedTask.endSlot)}
-                  </span>
-                  <span>
-                    {((selectedTask.endSlot - selectedTask.startSlot) * 15) /
-                      60}{" "}
-                    hour/s
-                  </span>
+                              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Time
+                  </label>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="w-4 h-4 text-gray-500" />
+                    <span>
+                      {formatTime(selectedTask.startSlot)} -{" "}
+                      {formatTime(selectedTask.endSlot)}
+                    </span>
+                    <span>
+                      {((selectedTask.endSlot - selectedTask.startSlot) * 15) /
+                        60}{" "}
+                      hour/s
+                    </span>
+                  </div>
                 </div>
-              </div>
+
+                {/* Show Harvest-specific info */}
+                {selectedTask.source === 'harvest' && selectedTask.harvestData && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Harvest Details
+                    </label>
+                    <div className="space-y-2 text-sm bg-green-50 p-3 rounded border">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-green-600" />
+                        <span className="font-medium">{selectedTask.harvestData.projectName}</span>
+                      </div>
+                      {selectedTask.harvestData.clientName && (
+                        <div className="text-gray-600">
+                          Client: {selectedTask.harvestData.clientName}
+                        </div>
+                      )}
+                      <div className="text-gray-600">
+                        Original allocation: {selectedTask.harvestData.allocation}h
+                      </div>
+                      <div className="text-xs text-green-700 font-medium">
+                        📋 Imported from Harvest Forecast
+                      </div>
+                    </div>
+                  </div>
+                )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
