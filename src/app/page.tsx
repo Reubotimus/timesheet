@@ -510,7 +510,7 @@ export default function TimeTracker() {
 
           <div className="flex items-center gap-2">
             <h1 className="text-3xl font-bold">
-              {format(selectedDate, "MMMM d, yyyy")}
+              {format(selectedDate, "EEEE, MMMM d, yyyy")}
             </h1>
             <Popover>
               <PopoverTrigger asChild>
