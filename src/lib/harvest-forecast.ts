@@ -1,151 +1,113 @@
-// Harvest Forecast API client and types
-
-export interface HarvestAssignment {
-  id: number;
-  person_id: number;
-  project_id: number;
-  start_date: string;
-  end_date: string;
-  allocation: number; // seconds
-  notes?: string;
-  project?: HarvestProject;
-  active_on_days_off: boolean;
-}
-
-export interface HarvestProject {
-  id: number;
-  name: string;
-  client_id: number;
-  color?: string;
-  code?: string;
-  client?: HarvestClient;
-}
-
-export interface HarvestClient {
-  id: number;
-  name: string;
-}
-
-export interface HarvestPerson {
-  id: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-}
-
-// Convert Harvest assignment to a task that can be dragged to calendar
-export interface HarvestTaskItem {
-  id: string;
-  title: string;
-  description: string;
-  duration: number; // in hours
-  color: string;
-  projectName: string;
-  clientName?: string;
-  allocation: number;
-  harvestData: HarvestAssignment;
-}
+import { HarvestAssignment, HarvestTaskItem } from '@/lib/types';
 
 class HarvestForecastClient {
   private baseUrl: string;
   private accountId: string;
   private accessToken: string;
-  private userId: string;
+  private userId: string | null = null;
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_HARVEST_FORECAST_API_URL || 'https://api.forecastapp.com';
     this.accountId = process.env.NEXT_PUBLIC_HARVEST_FORECAST_ACCOUNT_ID || '';
     this.accessToken = process.env.NEXT_PUBLIC_HARVEST_FORECAST_ACCESS_TOKEN || '';
-    this.userId = process.env.NEXT_PUBLIC_HARVEST_FORECAST_USER_ID || '';
-
-    if (!this.accountId || !this.accessToken || !this.userId) {
-      console.warn('Harvest Forecast credentials not properly configured');
+    
+    if (typeof window !== 'undefined') {
+      const savedUserId = localStorage.getItem('harvest_user_id');
+      if (savedUserId) {
+        this.userId = savedUserId;
+      }
     }
   }
 
-  private getHeaders() {
-    return {
-      'Authorization': `Bearer ${this.accessToken}`,
-      'Forecast-Account-ID': this.accountId,
-      'Content-Type': 'application/json',
-    };
+  setUserId(userId: string) {
+    this.userId = userId;
+    
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('harvest_user_id', userId);
+    }
+  }
+
+  async findUserIdByEmail(email: string): Promise<string | null> {
+    if (!this.accountId || !this.accessToken) {
+      return null;
+    }
+
+    try {
+      const peopleResponse = await this.fetchFromHarvest<{ people: any[] }>('/people');
+      const people = peopleResponse.people || [];
+      
+      const matchingPerson = people.find(person => 
+        person.email && person.email.toLowerCase() === email.toLowerCase()
+      );
+      
+      if (matchingPerson) {
+        return matchingPerson.id.toString();
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  getUserId(): string | null {
+    return this.userId;
+  }
+
+  isConfigured(): boolean {
+    return !!(this.accountId && this.accessToken && this.userId);
   }
 
   private async fetchFromHarvest<T>(endpoint: string): Promise<T> {
+    if (!this.accountId || !this.accessToken) {
+      throw new Error('Harvest Forecast not configured. Please set account ID and access token.');
+    }
+
     const url = `${this.baseUrl}${endpoint}`;
     
     try {
       const response = await fetch(url, {
-        headers: this.getHeaders(),
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Forecast-Account-ID': this.accountId,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!response.ok) {
-        throw new Error(`Harvest API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Harvest Forecast API error: ${response.status} ${response.statusText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      return data;
     } catch (error) {
-      console.error('Harvest Forecast API error:', error);
       throw error;
     }
   }
 
-  // Fetch assignments for the hardcoded user for a specific date range
-  async getAssignments(startDate: string, endDate: string): Promise<HarvestAssignment[]> {
-    const endpoint = `/assignments?start_date=${startDate}&end_date=${endDate}&person_id=${this.userId}`;
-    const response = await this.fetchFromHarvest<{ assignments: HarvestAssignment[] }>(endpoint);
-    return response.assignments || [];
-  }
+  async getAssignments(): Promise<HarvestAssignment[]> {
+    if (!this.isConfigured()) {
+      return [];
+    }
 
-  // Fetch projects to get project details
-  async getProjects(): Promise<HarvestProject[]> {
-    const response = await this.fetchFromHarvest<{ projects: HarvestProject[] }>('/projects');
-    return response.projects || [];
-  }
-
-  // Fetch clients for additional context
-  async getClients(): Promise<HarvestClient[]> {
-    const response = await this.fetchFromHarvest<{ clients: HarvestClient[] }>('/clients');
-    return response.clients || [];
-  }
-
-  // Convert assignments to draggable task items
-  async getTaskItems(date: Date): Promise<HarvestTaskItem[]> {
-    const dateStr = date.toISOString().split('T')[0];
-    
     try {
-      // Fetch assignments for the selected date
-      const assignments = await this.getAssignments(dateStr, dateStr);
-      
-      // Fetch projects and clients for context
-      const [projects, clients] = await Promise.all([
-        this.getProjects(),
-        this.getClients()
-      ]);
-
-      // Create lookup maps
-      const projectMap = new Map(projects.map(p => [p.id, p]));
-      const clientMap = new Map(clients.map(c => [c.id, c]));
-
-      // Convert assignments to task items
-      return assignments.map((assignment): HarvestTaskItem => {
-        const project = projectMap.get(assignment.project_id);
-        const client = project ? clientMap.get(project.client_id) : undefined;
-
-        return {
-          id: `harvest-${assignment.id}`,
-          title: project?.name || 'Unknown Project',
-          description: assignment.notes || `${Math.round(assignment.allocation / 3600 * 100) / 100}h scheduled`,
-          duration: assignment.allocation / 3600, // Convert seconds to hours
-          color: project?.color || '#3B82F6', // Default blue
-          projectName: project?.name || 'Unknown Project',
-          clientName: client?.name,
-          allocation: assignment.allocation / 3600, // Convert seconds to hours
-          harvestData: assignment,
-        };
-      });
+      const response = await this.fetchFromHarvest<{ assignments: HarvestAssignment[] }>('/assignments');
+      return response.assignments || [];
     } catch (error) {
-      console.error('Failed to fetch Harvest tasks:', error);
+      return [];
+    }
+  }
+
+  async getTaskItems(): Promise<HarvestTaskItem[]> {
+    if (!this.isConfigured()) {
+      return [];
+    }
+
+    try {
+      const response = await this.fetchFromHarvest<{ task_assignments: HarvestTaskItem[] }>('/task_assignments');
+      return response.task_assignments || [];
+    } catch (error) {
       return [];
     }
   }

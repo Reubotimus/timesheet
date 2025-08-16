@@ -1,7 +1,5 @@
 "use client";
 
-import type React from "react";
-
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,8 +22,9 @@ import {
 } from "@/components/ui/popover";
 import { format, addDays, subDays } from "date-fns";
 import HarvestTaskPanel from "@/components/HarvestTaskPanel";
-import type { HarvestTaskItem } from "@/lib/harvest-forecast";
-import { useSession, signIn, signOut } from "next-auth/react";
+import HarvestConnectionStatus from "@/components/HarvestConnectionStatus";
+import type { HarvestTaskItem } from "@/lib/types";
+import { useSession, signIn } from "next-auth/react";
 
 interface Task {
   id: string;
@@ -151,16 +150,6 @@ export default function TimeTracker() {
       const relativeY = e.clientY - taskRect.top;
       const isTopHalf = relativeY < taskRect.height / 2;
 
-      console.log("Task resize debug:", {
-        clickedSlot: slot,
-        taskStart: clickedTask.startSlot,
-        taskEnd: clickedTask.endSlot,
-        relativeY,
-        taskHeight: taskRect.height,
-        isTopHalf,
-        mouseY: e.clientY,
-      });
-
       setDragOperation({
         type: "click",
         startTime: Date.now(),
@@ -189,27 +178,14 @@ export default function TimeTracker() {
     const dy = e.clientY - dragOperation.startPosition.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    // Only log when transitioning from click to drag or when slot changes
     if (
       (dragOperation.type === "click" && distance > 5) ||
       (dragOperation.type === "drag" &&
         currentSlot !== dragOperation.currentSlot)
     ) {
-      console.log("Drag operation:", {
-        type: dragOperation.type,
-        resizeType: dragOperation.resizeType,
-        currentSlot,
-        distance,
-        fromClickToDrag: dragOperation.type === "click" && distance > 5,
-        ctrlPressed,
-      });
-    }
-
-    // If we're in click state and moved more than 5px, transition to drag
-    if (dragOperation.type === "click" && distance > 5) {
       setDragOperation((prev) => ({
         ...prev,
-        type: "drag",
+        type: dragOperation.type === "click" && distance > 5 ? "drag" : prev.type,
       }));
     }
 
@@ -643,6 +619,15 @@ export default function TimeTracker() {
 
       {/* Edit Sidebar */}
       <div className="w-80 border-l border-gray-200 bg-white p-4 overflow-y-auto sticky top-0 h-screen flex flex-col">
+        {/* Harvest Connection Status */}
+        <div className="mb-6">
+          <HarvestConnectionStatus 
+            onConnectionEstablished={(userId) => {
+              // Harvest connection established
+            }}
+          />
+        </div>
+
         {/* Harvest Tasks Panel */}
         <div className="mb-6">
           <HarvestTaskPanel selectedDate={selectedDate} />
@@ -668,10 +653,10 @@ export default function TimeTracker() {
                 />
               </div>
 
-                              <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Time
-                  </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Time
+                </label>
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="w-4 h-4 text-gray-500" />
                     <span>

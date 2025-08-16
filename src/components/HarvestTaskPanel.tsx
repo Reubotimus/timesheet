@@ -1,11 +1,11 @@
 "use client";
 
-import type React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Clock, Building2, Loader2 } from "lucide-react";
-import { harvestClient, type HarvestTaskItem } from "@/lib/harvest-forecast";
+import { Download, Clock, Building2, Loader2, AlertCircle } from "lucide-react";
+import { harvestClient } from "@/lib/harvest-forecast";
+import type { HarvestTaskItem } from "@/lib/types";
 
 interface HarvestTaskPanelProps {
   selectedDate: Date;
@@ -17,38 +17,87 @@ export default function HarvestTaskPanel({ selectedDate, onTaskDragStart }: Harv
   const [isLoading, setIsLoading] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    const checkConnection = () => {
+      const connected = harvestClient.isConfigured();
+      setIsConnected(connected);
+      
+      if (!connected) {
+        setError('Harvest Forecast not connected. Please connect via Office 365 first.');
+      } else {
+        setError(null);
+      }
+    };
+
+    checkConnection();
+    
+    const handleStorageChange = () => {
+      checkConnection();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    const interval = setInterval(checkConnection, 2000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
 
   const fetchHarvestTasks = async () => {
+    if (!isConnected) {
+      setError('Please connect to Harvest Forecast first');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
-      const tasks = await harvestClient.getTaskItems(selectedDate);
+      const tasks = await harvestClient.getTaskItems();
       setHarvestTasks(tasks);
       setLastFetchTime(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch Harvest tasks');
-      console.error('Error fetching Harvest tasks:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDragStart = (task: HarvestTaskItem, e: React.DragEvent) => {
-    // Set drag data
     e.dataTransfer.setData('application/json', JSON.stringify({
       type: 'harvest-task',
       task: task
     }));
     e.dataTransfer.effectAllowed = 'copy';
     
-    // Call parent handler if provided
     onTaskDragStart?.(task, e);
   };
 
+  if (!isConnected) {
+    return (
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <AlertCircle className="w-5 h-5 text-orange-600" />
+          <h3 className="text-lg font-semibold">Harvest Schedule</h3>
+        </div>
+        
+        <div className="text-sm text-gray-600 mb-3">
+          Connect to Harvest Forecast to view and schedule your tasks.
+        </div>
+        
+        <div className="p-3 bg-orange-50 border border-orange-200 rounded-md text-orange-700 text-sm">
+          <strong>Not Connected:</strong> Please use the connection panel above to connect to Harvest via Office 365.
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* Fetch Button */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Harvest Schedule</h3>
         <Button
@@ -67,21 +116,18 @@ export default function HarvestTaskPanel({ selectedDate, onTaskDragStart }: Harv
         </Button>
       </div>
 
-      {/* Last fetch time */}
       {lastFetchTime && (
         <p className="text-xs text-gray-500">
           Last updated: {lastFetchTime.toLocaleTimeString()}
         </p>
       )}
 
-      {/* Error message */}
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
           {error}
         </div>
       )}
 
-      {/* Tasks list */}
       <div className="space-y-2 max-h-60 overflow-y-auto">
         {harvestTasks.length === 0 ? (
           <div className="text-center py-4 text-gray-500 text-sm">
@@ -134,7 +180,6 @@ export default function HarvestTaskPanel({ selectedDate, onTaskDragStart }: Harv
         )}
       </div>
 
-      {/* Instructions */}
       {harvestTasks.length > 0 && (
         <div className="text-xs text-gray-600 p-2 bg-blue-50 rounded border">
           <strong>Tip:</strong> Drag any task from above to the calendar to schedule it at a specific time.
