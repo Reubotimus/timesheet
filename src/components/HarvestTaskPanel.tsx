@@ -8,11 +8,10 @@ import { harvestClient } from "@/lib/harvest-forecast";
 import type { HarvestTaskItem } from "@/lib/types";
 
 interface HarvestTaskPanelProps {
-  selectedDate: Date;
   onTaskDragStart?: (task: HarvestTaskItem, e: React.DragEvent) => void;
 }
 
-export default function HarvestTaskPanel({ selectedDate, onTaskDragStart }: HarvestTaskPanelProps) {
+export default function HarvestTaskPanel({ onTaskDragStart }: HarvestTaskPanelProps) {
   const [harvestTasks, setHarvestTasks] = useState<HarvestTaskItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);

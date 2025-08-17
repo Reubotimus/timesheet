@@ -622,7 +622,7 @@ export default function TimeTracker() {
         {/* Harvest Connection Status */}
         <div className="mb-6">
           <HarvestConnectionStatus 
-            onConnectionEstablished={(userId) => {
+            onConnectionEstablished={() => {
               // Harvest connection established
             }}
           />
@@ -630,7 +630,7 @@ export default function TimeTracker() {
 
         {/* Harvest Tasks Panel */}
         <div className="mb-6">
-          <HarvestTaskPanel selectedDate={selectedDate} />
+          <HarvestTaskPanel />
         </div>
 
         {/* Task Details Section */}

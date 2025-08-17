@@ -33,7 +33,7 @@ class HarvestForecastClient {
     }
 
     try {
-      const peopleResponse = await this.fetchFromHarvest<{ people: any[] }>('/people');
+      const peopleResponse = await this.fetchFromHarvest<{ people: Array<{ id: number; email?: string }> }>('/people');
       const people = peopleResponse.people || [];
       
       const matchingPerson = people.find(person => 
@@ -45,7 +45,7 @@ class HarvestForecastClient {
       }
       
       return null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -75,7 +75,6 @@ class HarvestForecastClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
         throw new Error(`Harvest Forecast API error: ${response.status} ${response.statusText}`);
       }
 
@@ -94,7 +93,7 @@ class HarvestForecastClient {
     try {
       const response = await this.fetchFromHarvest<{ assignments: HarvestAssignment[] }>('/assignments');
       return response.assignments || [];
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -107,7 +106,7 @@ class HarvestForecastClient {
     try {
       const response = await this.fetchFromHarvest<{ task_assignments: HarvestTaskItem[] }>('/task_assignments');
       return response.task_assignments || [];
-    } catch (error) {
+    } catch {
       return [];
     }
   }

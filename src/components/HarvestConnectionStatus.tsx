@@ -21,7 +21,6 @@ interface HarvestConnectionStatusProps {
 
 export default function HarvestConnectionStatus({ onConnectionEstablished }: HarvestConnectionStatusProps) {
   const { data: session } = useSession();
-  const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [harvestUserId, setHarvestUserId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -42,7 +41,6 @@ export default function HarvestConnectionStatus({ onConnectionEstablished }: Har
       return;
     }
 
-    setIsConnecting(true);
     setConnectionStatus('connecting');
     setErrorMessage('');
 
@@ -63,19 +61,12 @@ export default function HarvestConnectionStatus({ onConnectionEstablished }: Har
         onConnectionEstablished?.(userId);
       } else {
         throw new Error(
-          `Could not find a Harvest user with email: ${userEmail}\n\n` +
-          'This usually means:\n\n' +
-          '1. Your email is not associated with a Harvest Forecast account\n' +
-          '2. You may need to be added to the Harvest Forecast system first\n' +
-          '3. The email addresses don\'t match exactly\n\n' +
-          'Please contact your administrator to ensure your email is properly set up in Harvest Forecast.'
+          `Could not find a Harvest user with email: ${userEmail}\n\n`
         );
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to connect to Harvest');
       setConnectionStatus('error');
-    } finally {
-      setIsConnecting(false);
     }
   };
 
@@ -204,7 +195,7 @@ export default function HarvestConnectionStatus({ onConnectionEstablished }: Har
 
         {connectionStatus === 'disconnected' && (
           <div className="text-xs text-gray-500">
-            <p>• We\'ll use your Office 365 email to find your Harvest Forecast account</p>
+            <p>• We will use your Office 365 email to find your Harvest Forecast account</p>
             <p>• This automatically connects you to the right Harvest user profile</p>
             <p>• No emails are searched - we only use your email address</p>
           </div>

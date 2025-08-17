@@ -32,7 +32,6 @@ class MicrosoftGraphClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
         throw new Error(`Microsoft Graph API error: ${response.status} ${response.statusText}`);
       }
 
@@ -57,7 +56,7 @@ class MicrosoftGraphClient {
       } else {
         return null;
       }
-    } catch (error) {
+    } catch {
       return null;
     }
   }
