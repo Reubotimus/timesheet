@@ -3,621 +3,1000 @@
 import type React from "react";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { format, addDays, subDays, addWeeks, isWeekend } from "date-fns";
+import { TaskGrid } from "@/components/task-grid";
+import { TaskSidebar } from "@/components/task-sidebar";
+import { CreateTaskModal } from "@/components/create-task-modal";
+import { Header } from "@/components/header";
+import { Instructions } from "@/components/instructions";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
-import {
-  Clock,
-  AlignLeft,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  Calendar as CalendarIcon,
-} from "lucide-react";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { format, addDays, subDays } from "date-fns";
 
 interface Task {
-  id: string;
-  startSlot: number;
-  endSlot: number;
-  title: string;
-  description: string;
-  color: string;
-  date: string; // ISO date string
+    id: string;
+    startSlot: number;
+    endSlot: number;
+    title: string;
+    description: string;
+    colorIndex: number;
+    date: string; // ISO date string
+    isRepeated?: boolean;
+    seriesKey?: string; // deterministic grouping for repeated series
 }
 
 type DragOperationType = "none" | "click" | "drag";
 
 interface DragOperation {
-  type: DragOperationType;
-  startTime: number;
-  startPosition: { x: number; y: number; slot: number };
-  currentSlot: number;
-  resizingTask?: string;
-  resizeType?: "start" | "end";
-  taskStartSlot?: number;
-  taskEndSlot?: number;
+    type: DragOperationType;
+    startTime: number;
+    startPosition: { x: number; y: number; slot: number };
+    currentSlot: number;
+    resizingTask?: string;
+    resizeType?: "start" | "end";
+    taskStartSlot?: number;
+    taskEndSlot?: number;
 }
 
+interface TaskTemplate {
+    title: string;
+    description: string;
+    colorIndex: number;
+}
+
+const LOCAL_STORAGE_TEMPLATES_KEY = "time-tracker-templates";
+const SLOT_HEIGHT = 40;
+const SLOT_COUNT = 68;
+
 const COLORS = [
-  "bg-blue-200 border-blue-400",
-  "bg-green-200 border-green-400",
-  "bg-yellow-200 border-yellow-400",
-  "bg-purple-200 border-purple-400",
-  "bg-pink-200 border-pink-400",
-  "bg-indigo-200 border-indigo-400",
-  "bg-red-200 border-red-400",
-  "bg-orange-200 border-orange-400",
+    "bg-blue-200 border-blue-400 text-blue-900 dark:bg-blue-800 dark:border-blue-600 dark:text-blue-100",
+    "bg-green-200 border-green-400 text-green-900 dark:bg-green-800 dark:border-green-600 dark:text-green-100",
+    "bg-yellow-200 border-yellow-400 text-yellow-900 dark:bg-yellow-800 dark:border-yellow-600 dark:text-yellow-100",
+    "bg-purple-200 border-purple-400 text-purple-900 dark:bg-purple-800 dark:border-purple-600 dark:text-purple-100",
+    "bg-pink-200 border-pink-400 text-pink-900 dark:bg-pink-800 dark:border-pink-600 dark:text-pink-100",
+    "bg-indigo-200 border-indigo-400 text-indigo-900 dark:bg-indigo-800 dark:border-indigo-600 dark:text-indigo-100",
+    "bg-red-200 border-red-400 text-red-900 dark:bg-red-800 dark:border-red-600 dark:text-red-100",
+    "bg-orange-200 border-orange-400 text-orange-900 dark:bg-orange-800 dark:border-orange-600 dark:text-orange-100",
+    "bg-cyan-200 border-cyan-400 text-cyan-900 dark:bg-cyan-800 dark:border-cyan-600 dark:text-cyan-100",
+    "bg-teal-200 border-teal-400 text-teal-900 dark:bg-teal-800 dark:border-teal-600 dark:text-teal-100",
+    "bg-lime-200 border-lime-400 text-lime-900 dark:bg-lime-800 dark:border-lime-600 dark:text-lime-100",
+    "bg-emerald-200 border-emerald-400 text-emerald-900 dark:bg-emerald-800 dark:border-emerald-600 dark:text-emerald-100",
+    "bg-rose-200 border-rose-400 text-rose-900 dark:bg-rose-800 dark:border-rose-600 dark:text-rose-100",
+    "bg-fuchsia-200 border-fuchsia-400 text-fuchsia-900 dark:bg-fuchsia-800 dark:border-fuchsia-600 dark:text-fuchsia-100",
+    "bg-violet-200 border-violet-400 dark:bg-violet-800 dark:border-violet-600",
+    "bg-sky-200 border-sky-400 dark:bg-sky-800 dark:border-sky-600",
+    "bg-amber-200 border-amber-400 dark:bg-amber-800 dark:border-amber-600",
+    "bg-slate-200 border-slate-400 dark:bg-slate-800 dark:border-slate-600",
 ];
 
 const LOCAL_STORAGE_KEY = "time-tracker-tasks";
 
+// Helper function to get color class from index
+const getColorClass = (colorIndex: number) => {
+    return COLORS[colorIndex] || COLORS[0];
+};
+
 export default function TimeTracker() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [dragOperation, setDragOperation] = useState<DragOperation>({
-    type: "none",
-    startTime: 0,
-    startPosition: { x: 0, y: 0, slot: 0 },
-    currentSlot: 0,
-  });
-  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    const [dragOperation, setDragOperation] = useState<DragOperation>({
+        type: "none",
+        startTime: 0,
+        startPosition: { x: 0, y: 0, slot: 0 },
+        currentSlot: 0,
+    });
+    const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+    const gridRef = useRef<HTMLDivElement | null>(null);
+    const titleInputRef = useRef<HTMLInputElement>(null);
 
-  // Load tasks from localStorage on initial render
-  useEffect(() => {
-    const savedTasks = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedTasks) {
-      try {
-        setTasks(JSON.parse(savedTasks));
-      } catch (error) {
-        console.error("Failed to parse saved tasks:", error);
-      }
-    }
-  }, []);
+    const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+    const [theme, setTheme] = useState<"light" | "dark">("light");
+    const [repeatCount, setRepeatCount] = useState<number>(0);
+    const [repeatEvery, setRepeatEvery] = useState<"day" | "week">("day");
+    const [weekdaysOnly, setWeekdaysOnly] = useState<boolean>(false);
+    const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+    const [newTaskTitle, setNewTaskTitle] = useState<string>("");
+    const [newTaskDescription, setNewTaskDescription] = useState<string>("");
+    const [newTaskStartTime, setNewTaskStartTime] = useState<string>("");
+    const [newTaskEndTime, setNewTaskEndTime] = useState<string>("");
 
-  // Save tasks to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
-  }, [tasks]);
+    // Load tasks from localStorage on initial render
+    useEffect(() => {
+        const savedTasks = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedTasks) {
+            try {
+                setTasks(JSON.parse(savedTasks));
+            } catch (error) {
+                console.error("Failed to parse saved tasks:", error);
+            }
+        }
+    }, []);
 
-  // Filter tasks for selected date
-  const filteredTasks = tasks.filter(
-    (task) => task.date === format(selectedDate, "yyyy-MM-dd")
-  );
+    // Save tasks to localStorage whenever they change
+    useEffect(() => {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
+    }, [tasks]);
 
-  const handlePreviousDay = () => {
-    setSelectedDate((prev) => subDays(prev, 1));
-  };
+    // Load templates
+    useEffect(() => {
+        const raw = localStorage.getItem(LOCAL_STORAGE_TEMPLATES_KEY);
+        if (raw) {
+            try {
+                setTemplates(JSON.parse(raw));
+            } catch {}
+        }
+    }, []);
 
-  const handleNextDay = () => {
-    setSelectedDate((prev) => addDays(prev, 1));
-  };
+    // Save templates
+    useEffect(() => {
+        localStorage.setItem(
+            LOCAL_STORAGE_TEMPLATES_KEY,
+            JSON.stringify(templates),
+        );
+    }, [templates]);
 
-  // Generate time slots from 7 AM to 12 AM (68 slots of 15 minutes each)
-  const timeSlots = Array.from({ length: 68 }, (_, i) => {
-    const totalMinutes = 7 * 60 + i * 15;
-    const hours = Math.floor(totalMinutes / 60) % 24;
-    const minutes = totalMinutes % 60;
-    const period = hours >= 12 ? "PM" : "AM";
-    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-    return `${displayHours}:${minutes.toString().padStart(2, "0")} ${period}`;
-  });
+    // Theme initialization
+    useEffect(() => {
+        const saved = localStorage.getItem("theme");
+        const prefersDark =
+            saved === "dark" ||
+            (!saved &&
+                window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", !!prefersDark);
+        setTheme(prefersDark ? "dark" : "light");
+    }, []);
 
-  const formatTime = (slot: number) => {
-    return timeSlots[slot] || "";
-  };
+    const toggleTheme = () => {
+        const next = theme === "dark" ? "light" : "dark";
+        setTheme(next);
+        localStorage.setItem("theme", next);
+        document.documentElement.classList.toggle("dark", next === "dark");
+    };
 
-  const getSlotFromY = useCallback((y: number) => {
-    if (!gridRef.current) return 0;
-    const rect = gridRef.current.getBoundingClientRect();
-    const relativeY = y - rect.top;
-    const slotHeight = 40; // Each slot is 40px high
-    return Math.max(0, Math.min(67, Math.floor(relativeY / slotHeight)));
-  }, []);
-
-  const isSlotOccupied = (slot: number, excludeTaskId?: string) => {
-    return filteredTasks.some(
-      (task) =>
-        task.id !== excludeTaskId &&
-        slot >= task.startSlot &&
-        slot < task.endSlot
+    // Filter tasks for selected date
+    const filteredTasks = tasks.filter(
+        (task: Task) => task.date === format(selectedDate, "yyyy-MM-dd"),
     );
-  };
 
-  const handleMouseDown = (e: React.MouseEvent, slot: number) => {
-    e.preventDefault();
+    const handlePreviousDay = () => {
+        setSelectedDate((prev: Date) => subDays(prev, 1));
+    };
 
-    // Check if clicking on an existing task
-    const clickedTask = filteredTasks.find(
-      (task) => slot >= task.startSlot && slot < task.endSlot
-    );
+    const handleNextDay = () => {
+        setSelectedDate((prev: Date) => addDays(prev, 1));
+    };
 
-    if (clickedTask) {
-      // Select the task for editing in sidebar
-      setSelectedTaskId(clickedTask.id);
+    // Keyboard shortcuts
+    useKeyboardShortcuts({
+        onPreviousDay: handlePreviousDay,
+        onNextDay: handleNextDay,
+        onToday: () => setSelectedDate(new Date()),
+        onCreateTask: () => {
+            setShowCreateModal(true);
+            setNewTaskTitle("");
+            setNewTaskDescription("");
+            setNewTaskStartTime("");
+            setNewTaskEndTime("");
+        },
+        onUnselectTask: () => setSelectedTaskId(null),
+    });
 
-      // Get the task's DOM element
-      const taskElement = e.currentTarget as HTMLElement;
-      const taskRect = taskElement.getBoundingClientRect();
+    // Generate time slots from 7 AM to 12 AM (68 slots of 15 minutes each)
+    const timeSlots = Array.from({ length: SLOT_COUNT }, (_, i) => {
+        const totalMinutes = 7 * 60 + i * 15;
+        const hours = Math.floor(totalMinutes / 60) % 24;
+        const minutes = totalMinutes % 60;
+        const period = hours >= 12 ? "PM" : "AM";
+        const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+        return `${displayHours}:${minutes
+            .toString()
+            .padStart(2, "0")} ${period}`;
+    });
 
-      // Calculate if we're in the top or bottom half based on mouse position
-      const relativeY = e.clientY - taskRect.top;
-      const isTopHalf = relativeY < taskRect.height / 2;
+    const formatTime = (slot: number) => {
+        return timeSlots[slot] || "";
+    };
 
-      console.log("Task resize debug:", {
-        clickedSlot: slot,
-        taskStart: clickedTask.startSlot,
-        taskEnd: clickedTask.endSlot,
-        relativeY,
-        taskHeight: taskRect.height,
-        isTopHalf,
-        mouseY: e.clientY,
-      });
+    const getSlotFromY = useCallback((y: number) => {
+        if (!gridRef.current) return 0;
+        const rect = gridRef.current.getBoundingClientRect();
+        const relativeY = y - rect.top;
+        const slotHeight = SLOT_HEIGHT; // Each slot is 40px high
+        return Math.max(
+            0,
+            Math.min(SLOT_COUNT - 1, Math.floor(relativeY / slotHeight)),
+        );
+    }, []);
 
-      setDragOperation({
-        type: "click",
-        startTime: Date.now(),
-        startPosition: { x: e.clientX, y: e.clientY, slot },
-        currentSlot: slot,
-        resizingTask: clickedTask.id,
-        resizeType: isTopHalf ? "start" : "end",
-        taskStartSlot: clickedTask.startSlot,
-        taskEndSlot: clickedTask.endSlot,
-      });
-    } else if (!isSlotOccupied(slot)) {
-      setDragOperation({
-        type: "click",
-        startTime: Date.now(),
-        startPosition: { x: e.clientX, y: e.clientY, slot },
-        currentSlot: slot,
-      });
-    }
-  };
+    const isSlotOccupied = (slot: number, excludeTaskId?: string) => {
+        return filteredTasks.some(
+            (task: Task) =>
+                task.id !== excludeTaskId &&
+                slot >= task.startSlot &&
+                slot < task.endSlot,
+        );
+    };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (dragOperation.type === "none") return;
+    const handleMouseDown = (e: React.MouseEvent, slot: number) => {
+        e.preventDefault();
 
-    const currentSlot = getSlotFromY(e.clientY);
-    const dx = e.clientX - dragOperation.startPosition.x;
-    const dy = e.clientY - dragOperation.startPosition.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+        // Check if clicking on an existing task
+        const clickedTask = filteredTasks.find(
+            (task: Task) => slot >= task.startSlot && slot < task.endSlot,
+        );
 
-    // Only log when transitioning from click to drag or when slot changes
-    if (
-      (dragOperation.type === "click" && distance > 5) ||
-      (dragOperation.type === "drag" &&
-        currentSlot !== dragOperation.currentSlot)
-    ) {
-      console.log("Drag operation:", {
-        type: dragOperation.type,
-        resizeType: dragOperation.resizeType,
-        currentSlot,
-        distance,
-        fromClickToDrag: dragOperation.type === "click" && distance > 5,
-      });
-    }
+        if (clickedTask) {
+            // Select the task for editing in sidebar
+            setSelectedTaskId(clickedTask.id);
 
-    // If we're in click state and moved more than 5px, transition to drag
-    if (dragOperation.type === "click" && distance > 5) {
-      setDragOperation((prev) => ({
-        ...prev,
-        type: "drag",
-      }));
-    }
+            // Get the task's DOM element
+            const taskElement = e.currentTarget as HTMLElement;
+            const taskRect = taskElement.getBoundingClientRect();
 
-    // Update current slot
-    setDragOperation((prev) => ({
-      ...prev,
-      currentSlot,
-    }));
-  };
+            // Calculate if we're in the top or bottom half based on mouse position
+            const relativeY = e.clientY - taskRect.top;
+            const isTopHalf = relativeY < taskRect.height / 2;
 
-  const handleMouseUp = () => {
-    if (dragOperation.type === "none") return;
+            // debug removed
 
-    // Handle click operation
-    if (dragOperation.type === "click") {
-      const slot = dragOperation.startPosition.slot;
-      const clickedTask = filteredTasks.find(
-        (task) => slot >= task.startSlot && slot < task.endSlot
-      );
+            setDragOperation({
+                type: "click",
+                startTime: Date.now(),
+                startPosition: { x: e.clientX, y: e.clientY, slot },
+                currentSlot: slot,
+                resizingTask: clickedTask.id,
+                resizeType: isTopHalf ? "start" : "end",
+                taskStartSlot: clickedTask.startSlot,
+                taskEndSlot: clickedTask.endSlot,
+            });
+        } else {
+            setDragOperation({
+                type: "click",
+                startTime: Date.now(),
+                startPosition: { x: e.clientX, y: e.clientY, slot },
+                currentSlot: slot,
+            });
+        }
+    };
 
-      if (!clickedTask && !isSlotOccupied(slot)) {
-        // Create a single-cell task
-        const newTask: Task = {
-          id: Date.now().toString(),
-          startSlot: slot,
-          endSlot: slot + 1,
-          title: "",
-          description: "",
-          color: COLORS[filteredTasks.length % COLORS.length],
-          date: format(selectedDate, "yyyy-MM-dd"),
-        };
-        setTasks((prev) => [...prev, newTask]);
-        setSelectedTaskId(newTask.id);
-      } else if (clickedTask && titleInputRef.current) {
-        // Focus the title input when clicking an existing task
-        titleInputRef.current.focus();
-      }
-    }
-    // Handle drag operation
-    else if (dragOperation.type === "drag") {
-      if (dragOperation.resizingTask) {
-        // Resize existing task
-        setTasks((prev) =>
-          prev.map((task) => {
-            if (task.id !== dragOperation.resizingTask) return task;
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (dragOperation.type === "none") return;
+
+        const currentSlot = getSlotFromY(e.clientY);
+        const dx = e.clientX - dragOperation.startPosition.x;
+        const dy = e.clientY - dragOperation.startPosition.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Only log when transitioning from click to drag or when slot changes
+        // debug removed
+
+        // If we're in click state and moved more than 5px, transition to drag
+        if (dragOperation.type === "click" && distance > 5) {
+            setDragOperation((prev: DragOperation) => ({
+                ...prev,
+                type: "drag",
+            }));
+        }
+
+        // Update current slot
+        setDragOperation((prev: DragOperation) => ({
+            ...prev,
+            currentSlot,
+        }));
+    };
+
+    const handleMouseUp = () => {
+        if (dragOperation.type === "none") return;
+
+        // Handle click operation
+        if (dragOperation.type === "click") {
+            const slot = dragOperation.startPosition.slot;
+            const clickedTask = filteredTasks.find(
+                (task: Task) => slot >= task.startSlot && slot < task.endSlot,
+            );
+
+            if (!clickedTask) {
+                // Create a single-cell task
+                const newTask: Task = {
+                    id: Date.now().toString(),
+                    startSlot: slot,
+                    endSlot: slot + 1,
+                    title: "",
+                    description: "",
+                    colorIndex: filteredTasks.length % COLORS.length,
+                    date: format(selectedDate, "yyyy-MM-dd"),
+                };
+                setTasks((prev: Task[]) => [...prev, newTask]);
+                setSelectedTaskId(newTask.id);
+            } else if (clickedTask && titleInputRef.current) {
+                // Focus the title input when clicking an existing task
+                titleInputRef.current.focus();
+            }
+        }
+        // Handle drag operation
+        else if (dragOperation.type === "drag") {
+            if (dragOperation.resizingTask) {
+                // Resize existing task
+                setTasks((prev: Task[]) =>
+                    prev.map((task: Task) => {
+                        if (task.id !== dragOperation.resizingTask) return task;
+
+                        if (dragOperation.resizeType === "start") {
+                            const newStartSlot = Math.min(
+                                dragOperation.currentSlot,
+                                task.endSlot - 1,
+                            );
+                            const finalStartSlot = Math.max(0, newStartSlot);
+
+                            // Ensure we don't conflict with other tasks
+                            let adjustedStartSlot = finalStartSlot;
+                            // allow overlaps: no occupancy loop
+
+                            return { ...task, startSlot: adjustedStartSlot };
+                        } else {
+                            const newEndSlot = Math.max(
+                                dragOperation.currentSlot + 1,
+                                task.startSlot + 1,
+                            );
+                            const finalEndSlot = Math.min(68, newEndSlot);
+
+                            // Allow overlaps. Just clamp to grid and ensure >= start+1
+                            return { ...task, endSlot: finalEndSlot };
+                        }
+                    }),
+                );
+            } else {
+                // Create new task
+                const startSlot = Math.min(
+                    dragOperation.startPosition.slot,
+                    dragOperation.currentSlot,
+                );
+                const endSlot =
+                    Math.max(
+                        dragOperation.startPosition.slot,
+                        dragOperation.currentSlot,
+                    ) + 1;
+
+                if (endSlot > startSlot) {
+                    const newTask: Task = {
+                        id: Date.now().toString(),
+                        startSlot,
+                        endSlot,
+                        title: "",
+                        description: "",
+                        colorIndex: filteredTasks.length % COLORS.length,
+                        date: format(selectedDate, "yyyy-MM-dd"),
+                    };
+                    setTasks((prev: Task[]) => [...prev, newTask]);
+                    setSelectedTaskId(newTask.id);
+                }
+            }
+        }
+
+        // Reset drag operation
+        setDragOperation({
+            type: "none",
+            startTime: 0,
+            startPosition: { x: 0, y: 0, slot: 0 },
+            currentSlot: 0,
+        });
+    };
+
+    const updateTask = (taskId: string, updates: Partial<Task>) => {
+        setTasks((prev: Task[]) =>
+            prev.map((task: Task) => {
+                if (task.id !== taskId) return task;
+                // Enforce minimum duration of 1 slot (15 minutes)
+                let newStart =
+                    updates.startSlot !== undefined
+                        ? Math.max(
+                              0,
+                              Math.min(SLOT_COUNT - 1, updates.startSlot),
+                          )
+                        : task.startSlot;
+                let newEnd =
+                    updates.endSlot !== undefined
+                        ? Math.max(1, Math.min(SLOT_COUNT, updates.endSlot))
+                        : task.endSlot;
+
+                if (
+                    updates.startSlot !== undefined ||
+                    updates.endSlot !== undefined
+                ) {
+                    if (newEnd <= newStart) {
+                        newEnd = newStart + 1;
+                        if (newEnd > SLOT_COUNT) {
+                            newStart = Math.max(0, SLOT_COUNT - 1);
+                            newEnd = SLOT_COUNT;
+                        }
+                    }
+                    const sanitized: Partial<Task> = {
+                        ...updates,
+                        startSlot: newStart,
+                        endSlot: newEnd,
+                    };
+                    return { ...task, ...sanitized };
+                }
+
+                return { ...task, ...updates };
+            }),
+        );
+    };
+
+    const deleteTask = (taskId: string) => {
+        setTasks((prev: Task[]) =>
+            prev.filter((task: Task) => task.id !== taskId),
+        );
+        setSelectedTaskId(null);
+    };
+
+    const getPreviewSlots = () => {
+        if (dragOperation.type === "none") return null;
+
+        if (dragOperation.type === "drag" && !dragOperation.resizingTask) {
+            const startSlot = Math.min(
+                dragOperation.startPosition.slot,
+                dragOperation.currentSlot,
+            );
+            const endSlot =
+                Math.max(
+                    dragOperation.startPosition.slot,
+                    dragOperation.currentSlot,
+                ) + 1;
+            return { startSlot, endSlot };
+        } else if (
+            dragOperation.type === "drag" &&
+            dragOperation.resizingTask &&
+            dragOperation.resizeType
+        ) {
+            const task = tasks.find(
+                (t: Task) => t.id === dragOperation.resizingTask,
+            );
+            if (!task) return null;
 
             if (dragOperation.resizeType === "start") {
-              const newStartSlot = Math.min(
-                dragOperation.currentSlot,
-                task.endSlot - 1
-              );
-              const finalStartSlot = Math.max(0, newStartSlot);
-
-              // Ensure we don't conflict with other tasks
-              let adjustedStartSlot = finalStartSlot;
-              while (
-                adjustedStartSlot < task.endSlot - 1 &&
-                isSlotOccupied(adjustedStartSlot, task.id)
-              ) {
-                adjustedStartSlot++;
-              }
-
-              return { ...task, startSlot: adjustedStartSlot };
+                const newStartSlot = Math.min(
+                    dragOperation.currentSlot,
+                    task.endSlot - 1,
+                );
+                return {
+                    startSlot: Math.max(0, newStartSlot),
+                    endSlot: task.endSlot,
+                };
             } else {
-              const newEndSlot = Math.max(
-                dragOperation.currentSlot + 1,
-                task.startSlot + 1
-              );
-              const finalEndSlot = Math.min(68, newEndSlot);
-
-              // Check slots forward from the current position
-              let adjustedEndSlot = task.startSlot + 1;
-              while (
-                adjustedEndSlot <= finalEndSlot &&
-                !isSlotOccupied(adjustedEndSlot - 1, task.id)
-              ) {
-                adjustedEndSlot++;
-              }
-              adjustedEndSlot--; // Step back one slot to the last valid position
-
-              return { ...task, endSlot: adjustedEndSlot };
+                const newEndSlot = Math.max(
+                    dragOperation.currentSlot + 1,
+                    task.startSlot + 1,
+                );
+                return {
+                    startSlot: task.startSlot,
+                    endSlot: Math.min(SLOT_COUNT, newEndSlot),
+                };
             }
-          })
-        );
-      } else {
-        // Create new task
-        const startSlot = Math.min(
-          dragOperation.startPosition.slot,
-          dragOperation.currentSlot
-        );
-        const endSlot =
-          Math.max(
-            dragOperation.startPosition.slot,
-            dragOperation.currentSlot
-          ) + 1;
+        }
 
-        // Check if any slots are occupied
-        const hasConflict = Array.from(
-          { length: endSlot - startSlot },
-          (_, i) => startSlot + i
-        ).some((slot) => isSlotOccupied(slot));
+        return null;
+    };
 
-        if (!hasConflict && endSlot > startSlot) {
-          const newTask: Task = {
+    const previewSlots = getPreviewSlots();
+    const selectedTask = tasks.find((task: Task) => task.id === selectedTaskId);
+
+    // Export/Import helpers
+    const triggerImport = () => {
+        const input = document.getElementById(
+            "import-input",
+        ) as HTMLInputElement | null;
+        input?.click();
+    };
+
+    const onImportFileChange = async (
+        e: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+
+            if (file.name.endsWith(".csv")) {
+                // Parse CSV
+                const lines = text.split("\n").filter((line) => line.trim());
+                if (lines.length < 2) return; // Need header + at least one data row
+
+                const header = lines[0].split(",");
+                const tasks: Task[] = [];
+
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(",");
+                    if (values.length >= header.length) {
+                        const task: Task = {
+                            id: values[0] || Date.now().toString(),
+                            date:
+                                values[1] || format(selectedDate, "yyyy-MM-dd"),
+                            startSlot: Number(values[2]) || 0,
+                            endSlot: Number(values[3]) || 1,
+                            title: values[4]?.replace(/"/g, "") || "",
+                            description: values[5]?.replace(/"/g, "") || "",
+                            colorIndex: isNaN(Number(values[6]))
+                                ? COLORS.findIndex((c) => c === values[6]) || 0
+                                : Number(values[6]) || 0,
+                        };
+                        tasks.push(task);
+                    }
+                }
+                setTasks(tasks);
+            } else {
+                // Parse JSON
+                const imported: Task[] = JSON.parse(text);
+                if (!Array.isArray(imported)) return;
+                const sanitized: Task[] = imported
+                    .filter((t: any) => t && typeof t === "object")
+                    .map((t: any) => ({
+                        id: String(t.id ?? Date.now().toString()),
+                        startSlot: Number(t.startSlot ?? 0),
+                        endSlot: Number(t.endSlot ?? 1),
+                        title: String(t.title ?? ""),
+                        description: String(t.description ?? ""),
+                        colorIndex:
+                            typeof t.colorIndex === "number"
+                                ? t.colorIndex
+                                : typeof t.color === "string"
+                                ? COLORS.findIndex((c) => c === t.color)
+                                : 0,
+                        date: String(
+                            t.date ?? format(selectedDate, "yyyy-MM-dd"),
+                        ),
+                    }));
+                setTasks(sanitized);
+            }
+        } catch (error) {
+            console.error("Failed to import file:", error);
+        }
+        e.target.value = "";
+    };
+
+    // Export helpers
+    const exportTasksJSON = () => {
+        const dataStr = JSON.stringify(tasks, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "timesheet.json";
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const exportTasksCSV = () => {
+        const header = [
+            "id",
+            "date",
+            "startSlot",
+            "endSlot",
+            "title",
+            "description",
+            "color",
+        ];
+        const rows = tasks.map((t: Task) =>
+            [
+                t.id,
+                t.date,
+                t.startSlot,
+                t.endSlot,
+                JSON.stringify(t.title ?? ""),
+                JSON.stringify(t.description ?? ""),
+                t.colorIndex,
+            ].join(","),
+        );
+        const csv = [header.join(","), ...rows].join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "timesheet.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // Templates helpers
+    const saveCurrentAsTemplate = () => {
+        if (!selectedTask) return;
+        const tpl: TaskTemplate = {
+            title: selectedTask.title,
+            description: selectedTask.description,
+            colorIndex: selectedTask.colorIndex,
+        };
+        setTemplates((prev: TaskTemplate[]) => [tpl, ...prev].slice(0, 50));
+    };
+
+    const deleteTemplate = (index: number) => {
+        setTemplates((prev: TaskTemplate[]) =>
+            prev.filter((_, i) => i !== index),
+        );
+    };
+
+    const applyTemplateToSelected = (tpl: TaskTemplate) => {
+        if (selectedTask) {
+            updateTask(selectedTask.id, {
+                title: tpl.title,
+                description: tpl.description,
+                colorIndex: tpl.colorIndex,
+            });
+        } else {
+            const today = format(selectedDate, "yyyy-MM-dd");
+            let slot = 0;
+            while (slot < SLOT_COUNT - 1 && isSlotOccupied(slot)) slot++;
+            const newTask: Task = {
+                id: Date.now().toString(),
+                startSlot: slot,
+                endSlot: slot + 1,
+                title: tpl.title,
+                description: tpl.description,
+                colorIndex: tpl.colorIndex,
+                date: today,
+            };
+            setTasks((prev: Task[]) => [...prev, newTask]);
+            setSelectedTaskId(newTask.id);
+        }
+    };
+
+    // Repeat helpers
+    const createRepeats = (seriesKey?: string) => {
+        if (!selectedTask || repeatCount <= 0) return;
+        const key =
+            seriesKey ||
+            `${selectedTask.title}|${selectedTask.description}|${selectedTask.startSlot}|${selectedTask.endSlot}`;
+        const base = {
+            ...selectedTask,
+            isRepeated: true,
+            seriesKey: key,
+        } as Task;
+        const tasksToCreate: Task[] = [];
+
+        // Create tasks for the next 30 occurrences (reasonable limit)
+        for (let occurrence = 1; occurrence <= 30; occurrence++) {
+            let nextDate: Date;
+
+            if (repeatEvery === "day") {
+                // Every N days
+                nextDate = addDays(selectedDate, occurrence * repeatCount);
+            } else {
+                // Every N weeks
+                nextDate = addWeeks(selectedDate, occurrence * repeatCount);
+            }
+
+            // Skip weekends if weekdaysOnly is enabled
+            if (weekdaysOnly && isWeekend(nextDate)) {
+                // Find next weekday
+                while (isWeekend(nextDate)) {
+                    nextDate = addDays(nextDate, 1);
+                }
+            }
+
+            const dateStr = format(nextDate, "yyyy-MM-dd");
+            const dayTasks = tasks.filter((t: Task) => t.date === dateStr);
+            const conflict = dayTasks.some(
+                (t: Task) =>
+                    base.startSlot < t.endSlot && base.endSlot > t.startSlot,
+            );
+
+            if (!conflict) {
+                const newTask: Task = {
+                    ...base,
+                    id: (Date.now() + occurrence).toString(),
+                    date: dateStr,
+                    isRepeated: true,
+                    seriesKey: key,
+                };
+                tasksToCreate.push(newTask);
+            }
+        }
+
+        // Add all new tasks at once
+        if (tasksToCreate.length > 0) {
+            setTasks((prev: Task[]) => [...prev, ...tasksToCreate]);
+        }
+    };
+
+    const deleteRepeatedTasks = (taskId: string) => {
+        const task = tasks.find((t) => t.id === taskId);
+        if (!task) return;
+
+        // Compare date strings (yyyy-MM-dd) lexicographically to avoid timezone pitfalls
+        const key =
+            task.seriesKey ||
+            `${task.title}|${task.description}|${task.startSlot}|${task.endSlot}`;
+        const tasksToDelete = tasks.filter((t) => {
+            return (
+                (t.seriesKey
+                    ? t.seriesKey === key
+                    : t.title === task.title &&
+                      t.description === task.description &&
+                      t.startSlot === task.startSlot &&
+                      t.endSlot === task.endSlot) && t.date >= task.date
+            );
+        });
+
+        const idsToDelete = tasksToDelete.map((t) => t.id);
+        setTasks((prev) => prev.filter((t) => !idsToDelete.includes(t.id)));
+    };
+
+    const deleteAllInSeries = (taskId: string) => {
+        const task = tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        const key =
+            task.seriesKey ||
+            `${task.title}|${task.description}|${task.startSlot}|${task.endSlot}`;
+        setTasks((prev) =>
+            prev.filter((t) =>
+                t.seriesKey
+                    ? t.seriesKey !== key
+                    : !(
+                          t.title === task.title &&
+                          t.description === task.description &&
+                          t.startSlot === task.startSlot &&
+                          t.endSlot === task.endSlot
+                      ),
+            ),
+        );
+        setSelectedTaskId(null);
+    };
+
+    const timeToSlot = (timeStr: string): number => {
+        const [time, period] = timeStr.split(" ");
+        const [hours, minutes] = time.split(":").map(Number);
+        let totalHours = hours;
+        if (period === "PM" && hours !== 12) totalHours += 12;
+        if (period === "AM" && hours === 12) totalHours = 0;
+        const totalMinutes = totalHours * 60 + minutes;
+        const startMinutes = 7 * 60; // 7 AM
+        return Math.max(0, Math.floor((totalMinutes - startMinutes) / 15));
+    };
+
+    const createTaskFromModal = (taskData: {
+        title: string;
+        description: string;
+        startTime: string;
+        endTime: string;
+        repeatCount?: number;
+        repeatEvery?: "day" | "week";
+        weekdaysOnly?: boolean;
+    }) => {
+        let startSlot = 0;
+        let endSlot = 1;
+
+        if (taskData.startTime && taskData.endTime) {
+            startSlot = timeToSlot(taskData.startTime);
+            endSlot = timeToSlot(taskData.endTime);
+            if (endSlot <= startSlot) endSlot = startSlot + 1;
+        } else {
+            // Find first available slot
+            while (startSlot < SLOT_COUNT - 1 && isSlotOccupied(startSlot))
+                startSlot++;
+            endSlot = startSlot + 1;
+        }
+
+        const seriesKeyBase = `${taskData.title}|${taskData.description}|${startSlot}|${endSlot}`;
+
+        const baseTask: Task = {
             id: Date.now().toString(),
             startSlot,
             endSlot,
-            title: "",
-            description: "",
-            color: COLORS[filteredTasks.length % COLORS.length],
+            title: taskData.title,
+            description: taskData.description,
+            colorIndex: filteredTasks.length % COLORS.length,
             date: format(selectedDate, "yyyy-MM-dd"),
-          };
-          setTasks((prev) => [...prev, newTask]);
-          setSelectedTaskId(newTask.id);
+            isRepeated: Boolean(
+                taskData.repeatCount && taskData.repeatCount > 0,
+            ),
+            seriesKey:
+                taskData.repeatCount && taskData.repeatCount > 0
+                    ? seriesKeyBase
+                    : undefined,
+        };
+
+        const tasksToCreate: Task[] = [baseTask];
+
+        // Handle repeats if specified
+        if (taskData.repeatCount && taskData.repeatCount > 0) {
+            // Create tasks for the next 30 occurrences (reasonable limit)
+            for (let occurrence = 1; occurrence <= 30; occurrence++) {
+                let nextDate: Date;
+
+                if (taskData.repeatEvery === "day") {
+                    // Every N days
+                    nextDate = addDays(
+                        selectedDate,
+                        occurrence * taskData.repeatCount,
+                    );
+                } else {
+                    // Every N weeks
+                    nextDate = addWeeks(
+                        selectedDate,
+                        occurrence * taskData.repeatCount,
+                    );
+                }
+
+                if (taskData.weekdaysOnly && isWeekend(nextDate)) {
+                    while (isWeekend(nextDate)) {
+                        nextDate = addDays(nextDate, 1);
+                    }
+                }
+
+                const dateStr = format(nextDate, "yyyy-MM-dd");
+                const dayTasks = tasks.filter((t: Task) => t.date === dateStr);
+                const conflict = dayTasks.some(
+                    (t: Task) => startSlot < t.endSlot && endSlot > t.startSlot,
+                );
+
+                if (!conflict) {
+                    tasksToCreate.push({
+                        ...baseTask,
+                        id: (Date.now() + occurrence).toString(),
+                        date: dateStr,
+                        isRepeated: true,
+                        seriesKey: seriesKeyBase,
+                    });
+                }
+            }
         }
-      }
-    }
 
-    // Reset drag operation
-    setDragOperation({
-      type: "none",
-      startTime: 0,
-      startPosition: { x: 0, y: 0, slot: 0 },
-      currentSlot: 0,
-    });
-  };
+        setTasks((prev: Task[]) => [...prev, ...tasksToCreate]);
+        setSelectedTaskId(baseTask.id);
+        setShowCreateModal(false);
+    };
 
-  const updateTask = (taskId: string, updates: Partial<Task>) => {
-    setTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, ...updates } : task))
-    );
-  };
-
-  const deleteTask = (taskId: string) => {
-    setTasks((prev) => prev.filter((task) => task.id !== taskId));
-    setSelectedTaskId(null);
-  };
-
-  const getPreviewSlots = () => {
-    if (dragOperation.type === "none") return null;
-
-    if (dragOperation.type === "drag" && !dragOperation.resizingTask) {
-      const startSlot = Math.min(
-        dragOperation.startPosition.slot,
-        dragOperation.currentSlot
-      );
-      const endSlot =
-        Math.max(dragOperation.startPosition.slot, dragOperation.currentSlot) +
-        1;
-      return { startSlot, endSlot };
-    } else if (
-      dragOperation.type === "drag" &&
-      dragOperation.resizingTask &&
-      dragOperation.resizeType
-    ) {
-      const task = tasks.find((t) => t.id === dragOperation.resizingTask);
-      if (!task) return null;
-
-      if (dragOperation.resizeType === "start") {
-        const newStartSlot = Math.min(
-          dragOperation.currentSlot,
-          task.endSlot - 1
-        );
-        return {
-          startSlot: Math.max(0, newStartSlot),
-          endSlot: task.endSlot,
+    const saveTaskAsTemplate = (task: Task) => {
+        const tpl: TaskTemplate = {
+            title: task.title,
+            description: task.description,
+            colorIndex: task.colorIndex,
         };
-      } else {
-        const newEndSlot = Math.max(
-          dragOperation.currentSlot + 1,
-          task.startSlot + 1
+        setTemplates((prev: TaskTemplate[]) => [tpl, ...prev].slice(0, 50));
+    };
+
+    const handleCopyTaskTitle = (taskId: string, titleText: string) => {
+        navigator.clipboard.writeText(titleText);
+        setCopiedTaskId(taskId);
+        setTimeout(() => setCopiedTaskId(null), 2000);
+    };
+
+    const handleCreateRepeats = (taskId: string) => {
+        const task = tasks.find((t) => t.id === taskId);
+        if (!task || repeatCount <= 0) return;
+
+        // Assign a seriesKey to the selected task if missing
+        const key =
+            task.seriesKey ||
+            `${task.title}|${task.description}|${task.startSlot}|${task.endSlot}`;
+        setTasks((prev) =>
+            prev.map((t) =>
+                t.id === taskId
+                    ? { ...t, isRepeated: true, seriesKey: key }
+                    : t,
+            ),
         );
-        return {
-          startSlot: task.startSlot,
-          endSlot: Math.min(68, newEndSlot),
-        };
-      }
-    }
 
-    return null;
-  };
+        setSelectedTaskId(taskId);
+        createRepeats(key);
+    };
 
-  const previewSlots = getPreviewSlots();
-  const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+    const applyTemplateToModal = (template: TaskTemplate) => {
+        // This will be handled in the modal component
+    };
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <div className="flex-1 p-4 overflow-auto">
-        <div className="flex items-center justify-between mb-8">
-          <Button variant="ghost" size="icon" onClick={handlePreviousDay}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
+    return (
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+            <Header
+                selectedDate={selectedDate}
+                theme={theme}
+                onPreviousDay={handlePreviousDay}
+                onNextDay={handleNextDay}
+                onToggleTheme={toggleTheme}
+            />
 
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold">
-              {format(selectedDate, "MMMM d, yyyy")}
-            </h1>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="icon">
-                  <CalendarIcon className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="center">
-                <Calendar
-                  selected={selectedDate}
-                  onSelect={(date) => date && setSelectedDate(date)}
-                  className="rounded-md border"
+            {/* Main Content with top padding for fixed header and right margin for sidebar */}
+            <div className="flex-1 pt-20 pr-80 p-4 mr-4">
+                <TaskGrid
+                    tasks={filteredTasks}
+                    timeSlots={timeSlots}
+                    dragOperation={dragOperation}
+                    selectedTaskId={selectedTaskId}
+                    previewSlots={previewSlots}
+                    colors={COLORS}
+                    repeatCount={repeatCount}
+                    repeatEvery={repeatEvery}
+                    weekdaysOnly={weekdaysOnly}
+                    gridRef={gridRef}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onUpdateTask={updateTask}
+                    onSaveAsTemplate={saveTaskAsTemplate}
+                    onCreateRepeats={handleCreateRepeats}
+                    onDeleteRepeatedTasks={deleteRepeatedTasks}
+                    onDeleteTask={deleteTask}
+                    onDeleteAllInSeries={deleteAllInSeries}
+                    setRepeatCount={setRepeatCount}
+                    setRepeatEvery={setRepeatEvery}
+                    setWeekdaysOnly={setWeekdaysOnly}
+                    formatTime={formatTime}
                 />
-              </PopoverContent>
-            </Popover>
-          </div>
 
-          <Button variant="ghost" size="icon" onClick={handleNextDay}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+                <Instructions />
 
-        <Card className="p-6">
-          <div
-            ref={gridRef}
-            className="relative select-none"
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-          >
-            {/* Time grid */}
-            {timeSlots.map((time, index) => (
-              <div
-                key={index}
-                className="flex border-b border-gray-200 h-10 hover:bg-gray-50 cursor-crosshair"
-                onMouseDown={(e) => handleMouseDown(e, index)}
-              >
-                <div className="w-20 text-sm text-gray-600 py-2 px-2 border-r border-gray-200 bg-gray-100">
-                  {time}
-                </div>
-                <div className="flex-1 relative">
-                  {/* Preview for new task or resizing */}
-                  {previewSlots &&
-                    index >= previewSlots.startSlot &&
-                    index < previewSlots.endSlot && (
-                      <div className="absolute inset-0 bg-blue-200 border border-blue-400 opacity-50 z-10" />
-                    )}
-                </div>
-              </div>
-            ))}
-
-            {/* Render tasks */}
-            {filteredTasks.map((task) => (
-              <div
-                key={task.id}
-                className={`absolute left-20 right-0 border-2 rounded cursor-move z-20 ${
-                  task.color
-                } ${selectedTaskId === task.id ? "ring-2 ring-blue-500" : ""}`}
-                style={{
-                  top: `${task.startSlot * 40}px`,
-                  height: `${(task.endSlot - task.startSlot) * 40}px`,
-                }}
-                onMouseDown={(e) => handleMouseDown(e, task.startSlot)}
-              >
-                <div className="p-2 h-full overflow-hidden">
-                  <div className="text-sm font-medium">
-                    <div className="flex items-center flex-wrap gap-2">
-                      <span className="font-bold">
-                        {task.title || "Untitled Task"}
-                      </span>
-                      <span>
-                        {formatTime(task.startSlot)} -{" "}
-                        {formatTime(task.endSlot)}
-                      </span>
-                      <span>
-                        {((task.endSlot - task.startSlot) * 15) / 60} hour/s
-                      </span>
-                    </div>
-                    {task.description && (
-                      <div className="text-xs text-gray-700 mt-1 line-clamp-2">
-                        {task.description}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <div className="mt-6 text-sm text-gray-600 space-y-1">
-          <p>
-            <strong>Instructions:</strong>
-          </p>
-          <p>• Click on an empty time slot to create a single-cell task</p>
-          <p>• Drag across empty time slots to create a multi-cell task</p>
-          <p>• Click on a task to edit it in the sidebar</p>
-          <p>• Drag the top half of a task to adjust start time</p>
-          <p>• Drag the bottom half of a task to adjust end time</p>
-        </div>
-      </div>
-
-      {/* Edit Sidebar */}
-      <div className="w-80 border-l border-gray-200 bg-white p-4 overflow-y-auto sticky top-0 h-screen flex flex-col">
-        <div className="flex-1 flex flex-col justify-center">
-          <h2 className="text-xl font-semibold mb-4">Task Details</h2>
-
-          {selectedTask ? (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title
-                </label>
-                <Input
-                  ref={titleInputRef}
-                  placeholder="Task title"
-                  value={selectedTask.title}
-                  onChange={(e) =>
-                    updateTask(selectedTask.id, { title: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Time
-                </label>
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="w-4 h-4 text-gray-500" />
-                  <span>
-                    {formatTime(selectedTask.startSlot)} -{" "}
-                    {formatTime(selectedTask.endSlot)}
-                  </span>
-                  <span>
-                    {((selectedTask.endSlot - selectedTask.startSlot) * 15) /
-                      60}{" "}
-                    hour/s
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <Textarea
-                  placeholder="Add description"
-                  value={selectedTask.description}
-                  onChange={(e) =>
-                    updateTask(selectedTask.id, { description: e.target.value })
-                  }
-                  rows={5}
-                />
-              </div>
-
-              <Button
-                variant="destructive"
-                className="w-full mt-4"
-                onClick={() => deleteTask(selectedTask.id)}
-              >
-                <Trash2 className="w-4 h-4 mr-2" /> Delete Task
-              </Button>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <AlignLeft className="w-12 h-12 mx-auto mb-2 opacity-30" />
-              <p>Select a task to edit or create a new one</p>
-            </div>
-          )}
-          {/* Recent Task Titles */}
-          <div className="mt-12">
-            <h3 className="text-md font-semibold mb-2">Recent Task Titles</h3>
-            <ul className="text-sm space-y-2 text-gray-700">
-              {tasks
-                .slice()
-                .sort((a, b) => Number(b.id) - Number(a.id))
-                .slice(0, 5)
-                .map((task) => {
-                  const isCopied = copiedTaskId === task.id;
-                  const titleText = task.title || "Untitled Task";
-
-                  const handleCopy = () => {
-                    navigator.clipboard.writeText(titleText);
-                    setCopiedTaskId(task.id);
-                    setTimeout(() => setCopiedTaskId(null), 2000); // reset after 2 seconds
-                  };
-
-                  return (
-                    <li
-                      key={task.id}
-                      className="flex items-center justify-between"
-                    >
-                      <div className="w-12 shrink-0 text-xs flex items-center justify-start text-blue-500">
-                        <button
-                          onClick={handleCopy}
-                          className="w-full text-left"
+                {/* Import/Export buttons - bottom right */}
+                <div className="mt-6 flex justify-end gap-2">
+                    <input
+                        id="import-input"
+                        type="file"
+                        accept="application/json,.csv"
+                        className="hidden"
+                        onChange={onImportFileChange}
+                    />
+                    <Button variant="outline" onClick={triggerImport} size="sm">
+                        Import
+                    </Button>
+                    <div className="relative">
+                        <select
+                            className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-1 text-sm pr-8 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                            onChange={(e) => {
+                                if (e.target.value === "json") {
+                                    exportTasksJSON();
+                                } else if (e.target.value === "csv") {
+                                    exportTasksCSV();
+                                }
+                                e.target.value = ""; // Reset selection
+                            }}
+                            defaultValue=""
                         >
-                          {isCopied ? "Copied" : "Copy"}
-                        </button>
-                      </div>
-                      <span className="truncate text-sm w-full text-left">
-                        {titleText}
-                      </span>
-                    </li>
-                  );
-                })}
-            </ul>
-          </div>
+                            <option value="" disabled>
+                                Export
+                            </option>
+                            <option value="json">Export JSON</option>
+                            <option value="csv">Export CSV</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+                            <svg
+                                className="fill-current h-4 w-4"
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 20 20"
+                            >
+                                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <CreateTaskModal
+                isOpen={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                onCreate={createTaskFromModal}
+                templates={templates}
+                onApplyTemplate={applyTemplateToModal}
+            />
+
+            <TaskSidebar
+                selectedTask={selectedTask || null}
+                selectedDate={selectedDate}
+                tasks={tasks}
+                templates={templates}
+                copiedTaskId={copiedTaskId}
+                onSelectDate={(date) => date && setSelectedDate(date)}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+                onSaveTemplate={saveCurrentAsTemplate}
+                onApplyTemplate={applyTemplateToSelected}
+                onDeleteTemplate={deleteTemplate}
+                onExportCSV={exportTasksCSV}
+                onCopyTaskTitle={handleCopyTaskTitle}
+                formatTime={formatTime}
+                titleInputRef={
+                    titleInputRef as React.RefObject<HTMLInputElement>
+                }
+            />
         </div>
-      </div>
-    </div>
-  );
+    );
 }
