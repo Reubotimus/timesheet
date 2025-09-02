@@ -21,7 +21,7 @@ export function Header({
     onToggleTheme,
 }: HeaderProps) {
     return (
-        <div className="fixed top-0 left-0 right-0 z-[1200] bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80 dark:supports-[backdrop-filter]:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700 shadow-sm">
+        <div className="fixed top-0 left-0 right-0 z-[1100] bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80 dark:supports-[backdrop-filter]:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700 shadow-sm">
             <div className="flex items-center justify-between px-4 py-3">
                 <Button
                     variant="ghost"
