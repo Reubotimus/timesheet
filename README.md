@@ -22,12 +22,14 @@ A modern, interactive time tracking application built with Next.js and React. Th
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone [your-repository-url]
 cd time-tracker
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 # or
@@ -35,6 +37,7 @@ yarn install
 ```
 
 3. Run the development server:
+
 ```bash
 npm run dev
 # or
@@ -72,6 +75,7 @@ yarn dev
 ## Technical Details
 
 The application is built using:
+
 - Next.js 13+ with App Router
 - React for the UI
 - Tailwind CSS for styling
@@ -81,4 +85,3 @@ The application is built using:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
