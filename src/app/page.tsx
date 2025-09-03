@@ -70,10 +70,7 @@ const COLORS = [
 
 const LOCAL_STORAGE_KEY = "time-tracker-tasks";
 
-// Helper function to get color class from index
-const getColorClass = (colorIndex: number) => {
-    return COLORS[colorIndex] || COLORS[0];
-};
+//
 
 export default function TimeTracker() {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -95,10 +92,7 @@ export default function TimeTracker() {
     const [repeatEvery, setRepeatEvery] = useState<"day" | "week">("day");
     const [weekdaysOnly, setWeekdaysOnly] = useState<boolean>(false);
     const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
-    const [newTaskTitle, setNewTaskTitle] = useState<string>("");
-    const [newTaskDescription, setNewTaskDescription] = useState<string>("");
-    const [newTaskStartTime, setNewTaskStartTime] = useState<string>("");
-    const [newTaskEndTime, setNewTaskEndTime] = useState<string>("");
+    //
 
     // Load tasks from localStorage on initial render
     useEffect(() => {
@@ -174,10 +168,6 @@ export default function TimeTracker() {
         onToday: () => setSelectedDate(new Date()),
         onCreateTask: () => {
             setShowCreateModal(true);
-            setNewTaskTitle("");
-            setNewTaskDescription("");
-            setNewTaskStartTime("");
-            setNewTaskEndTime("");
         },
         onUnselectTask: () => setSelectedTaskId(null),
     });
@@ -268,8 +258,7 @@ export default function TimeTracker() {
         const dy = e.clientY - dragOperation.startPosition.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        // Only log when transitioning from click to drag or when slot changes
-        // debug removed
+        //
 
         // If we're in click state and moved more than 5px, transition to drag
         if (dragOperation.type === "click" && distance > 5) {
@@ -330,7 +319,7 @@ export default function TimeTracker() {
                             const finalStartSlot = Math.max(0, newStartSlot);
 
                             // Ensure we don't conflict with other tasks
-                            let adjustedStartSlot = finalStartSlot;
+                            const adjustedStartSlot = finalStartSlot;
                             // allow overlaps: no occupancy loop
 
                             return { ...task, startSlot: adjustedStartSlot };
@@ -528,26 +517,34 @@ export default function TimeTracker() {
                 setTasks(tasks);
             } else {
                 // Parse JSON
-                const imported: Task[] = JSON.parse(text);
+                const imported: unknown = JSON.parse(text);
                 if (!Array.isArray(imported)) return;
-                const sanitized: Task[] = imported
-                    .filter((t: any) => t && typeof t === "object")
-                    .map((t: any) => ({
-                        id: String(t.id ?? Date.now().toString()),
-                        startSlot: Number(t.startSlot ?? 0),
-                        endSlot: Number(t.endSlot ?? 1),
-                        title: String(t.title ?? ""),
-                        description: String(t.description ?? ""),
-                        colorIndex:
-                            typeof t.colorIndex === "number"
-                                ? t.colorIndex
-                                : typeof t.color === "string"
-                                ? COLORS.findIndex((c) => c === t.color)
-                                : 0,
-                        date: String(
-                            t.date ?? format(selectedDate, "yyyy-MM-dd"),
-                        ),
-                    }));
+                const sanitized: Task[] = (imported as unknown[])
+                    .filter(
+                        (t: unknown): t is { [key: string]: unknown } =>
+                            Boolean(t) && typeof t === "object",
+                    )
+                    .map((t) => {
+                        const obj = t as { [key: string]: unknown };
+                        return {
+                            id: String(obj.id ?? Date.now().toString()),
+                            startSlot: Number(obj.startSlot ?? 0),
+                            endSlot: Number(obj.endSlot ?? 1),
+                            title: String(obj.title ?? ""),
+                            description: String(obj.description ?? ""),
+                            colorIndex:
+                                typeof obj.colorIndex === "number"
+                                    ? (obj.colorIndex as number)
+                                    : typeof obj.color === "string"
+                                    ? COLORS.findIndex(
+                                          (c) => c === (obj.color as string),
+                                      )
+                                    : 0,
+                            date: String(
+                                obj.date ?? format(selectedDate, "yyyy-MM-dd"),
+                            ),
+                        };
+                    });
                 setTasks(sanitized);
             }
         } catch (error) {
@@ -600,15 +597,6 @@ export default function TimeTracker() {
     };
 
     // Templates helpers
-    const saveCurrentAsTemplate = () => {
-        if (!selectedTask) return;
-        const tpl: TaskTemplate = {
-            title: selectedTask.title,
-            description: selectedTask.description,
-            colorIndex: selectedTask.colorIndex,
-        };
-        setTemplates((prev: TaskTemplate[]) => [tpl, ...prev].slice(0, 50));
-    };
 
     const deleteTemplate = (index: number) => {
         setTemplates((prev: TaskTemplate[]) =>
@@ -882,8 +870,8 @@ export default function TimeTracker() {
         createRepeats(key);
     };
 
-    const applyTemplateToModal = (template: TaskTemplate) => {
-        // This will be handled in the modal component
+    const applyTemplateToModal = () => {
+        // no-op; modal handles applying template locally
     };
 
     return (
@@ -901,7 +889,6 @@ export default function TimeTracker() {
                 <TaskGrid
                     tasks={filteredTasks}
                     timeSlots={timeSlots}
-                    dragOperation={dragOperation}
                     selectedTaskId={selectedTaskId}
                     previewSlots={previewSlots}
                     colors={COLORS}
@@ -987,10 +974,8 @@ export default function TimeTracker() {
                 onSelectDate={(date) => date && setSelectedDate(date)}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                onSaveTemplate={saveCurrentAsTemplate}
                 onApplyTemplate={applyTemplateToSelected}
                 onDeleteTemplate={deleteTemplate}
-                onExportCSV={exportTasksCSV}
                 onCopyTaskTitle={handleCopyTaskTitle}
                 formatTime={formatTime}
                 titleInputRef={

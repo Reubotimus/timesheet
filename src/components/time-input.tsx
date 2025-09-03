@@ -18,49 +18,52 @@ export function TimeInput({
     placeholder,
     className,
 }: TimeInputProps) {
-    const [hours, setHours] = useState<string>("9");
-    const [minutes, setMinutes] = useState<string>("00");
-    const [period, setPeriod] = useState<"AM" | "PM">("AM");
+    const [hours, setHours] = useState<string>(() => {
+        if (value) {
+            const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+            if (match) return match[1];
+        }
+        return "9";
+    });
+    const [minutes, setMinutes] = useState<string>(() => {
+        if (value) {
+            const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+            if (match) return match[2];
+        }
+        return "00";
+    });
+    const [period, setPeriod] = useState<"AM" | "PM">(() => {
+        if (value) {
+            const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+            if (match) return match[3].toUpperCase() as "AM" | "PM";
+        }
+        return "AM";
+    });
     const [editing, setEditing] = useState<
         "none" | "hours" | "minutes" | "period"
     >("none");
 
-    // Initialize from value synchronously to avoid flicker
+    // Keep internal state in sync when value prop changes and not editing
     useLayoutEffect(() => {
-        if (value) {
-            const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-            if (match) {
-                setHours(match[1]);
-                setMinutes(match[2]);
-                setPeriod(match[3].toUpperCase() as "AM" | "PM");
-            }
+        if (!value) return;
+        if (editing !== "none") return;
+        const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (match) {
+            if (match[1] !== hours) setHours(match[1]);
+            if (match[2] !== minutes) setMinutes(match[2]);
+            const nextPeriod = match[3].toUpperCase() as "AM" | "PM";
+            if (nextPeriod !== period) setPeriod(nextPeriod);
         }
-        // run once on mount
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [value, editing, hours, minutes, period]);
 
     // Parse external updates (skip while editing)
     useEffect(() => {
-        if (editing !== "none") return; // avoid prop-to-state sync while user edits
-        if (value) {
-            const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-            if (match) {
-                if (match[1] !== hours) setHours(match[1]);
-                if (match[2] !== minutes) setMinutes(match[2]);
-                if (match[3].toUpperCase() !== period)
-                    setPeriod(match[3].toUpperCase() as "AM" | "PM");
-            }
-        }
-    }, [value, editing]);
-
-    // Update parent when internal state changes (formatted)
-    useEffect(() => {
+        if (editing !== "none") return;
+        if (!hours || !minutes) return;
         const formattedTime = `${hours}:${minutes.padStart(2, "0")} ${period}`;
-        if (formattedTime !== value && hours && minutes) {
-            onChange(formattedTime);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hours, minutes, period]);
+        if (formattedTime !== value) onChange(formattedTime);
+    }, [hours, minutes, period, value, onChange, editing]);
+
 
     const adjustHours = (delta: number) => {
         const currentHours = parseInt(hours) || 1;

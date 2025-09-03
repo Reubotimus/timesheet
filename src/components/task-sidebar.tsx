@@ -38,10 +38,8 @@ interface TaskSidebarProps {
     onSelectDate: (date: Date | undefined) => void;
     onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
     onDeleteTask: (taskId: string) => void;
-    onSaveTemplate: () => void;
     onApplyTemplate: (template: TaskTemplate) => void;
     onDeleteTemplate: (index: number) => void;
-    onExportCSV: () => void;
     onCopyTaskTitle: (taskId: string, title: string) => void;
     formatTime: (slot: number) => string;
     titleInputRef: React.RefObject<HTMLInputElement>;
@@ -56,10 +54,8 @@ export function TaskSidebar({
     onSelectDate,
     onUpdateTask,
     onDeleteTask,
-    onSaveTemplate,
     onApplyTemplate,
     onDeleteTemplate,
-    onExportCSV,
     onCopyTaskTitle,
     formatTime,
     titleInputRef,

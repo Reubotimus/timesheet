@@ -36,21 +36,11 @@ interface Task {
     seriesKey?: string;
 }
 
-interface DragOperation {
-    type: "none" | "click" | "drag";
-    startTime: number;
-    startPosition: { x: number; y: number; slot: number };
-    currentSlot: number;
-    resizingTask?: string;
-    resizeType?: "start" | "end";
-    taskStartSlot?: number;
-    taskEndSlot?: number;
-}
+//
 
 interface TaskGridProps {
     tasks: Task[];
     timeSlots: string[];
-    dragOperation: DragOperation;
     selectedTaskId: string | null;
     previewSlots: { startSlot: number; endSlot: number } | null;
     colors: string[];
@@ -78,7 +68,6 @@ const SLOT_HEIGHT = 40;
 export function TaskGrid({
     tasks,
     timeSlots,
-    dragOperation,
     selectedTaskId,
     previewSlots,
     colors,
