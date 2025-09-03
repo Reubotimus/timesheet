@@ -89,10 +89,10 @@ export function CreateTaskModal({
 
     return (
         <div
-            className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/50 z-[1200] flex items-center justify-center p-4"
             onKeyDown={handleKeyDown}
         >
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 z-[1201]">
                 <h2 className="text-xl font-semibold mb-4 dark:text-white">
                     Create New Task
                 </h2>
