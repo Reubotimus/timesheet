@@ -8,6 +8,7 @@ interface UseKeyboardShortcutsProps {
     onToday: () => void;
     onCreateTask: () => void;
     onUnselectTask: () => void;
+    onDeleteTask: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -16,6 +17,7 @@ export function useKeyboardShortcuts({
     onToday,
     onCreateTask,
     onUnselectTask,
+    onDeleteTask,
 }: UseKeyboardShortcutsProps) {
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -52,6 +54,11 @@ export function useKeyboardShortcuts({
                     e.preventDefault();
                     onNextDay();
                     break;
+                case "Delete":
+                case "Backspace":
+                    e.preventDefault();
+                    onDeleteTask();
+                    break;
                 case "t":
                 case "T":
                     e.preventDefault();
@@ -80,5 +87,12 @@ export function useKeyboardShortcuts({
 
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-    }, [onPreviousDay, onNextDay, onToday, onCreateTask, onUnselectTask]);
+    }, [
+        onPreviousDay,
+        onNextDay,
+        onToday,
+        onCreateTask,
+        onUnselectTask,
+        onDeleteTask,
+    ]);
 }

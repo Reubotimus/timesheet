@@ -70,8 +70,6 @@ const COLORS = [
 
 const LOCAL_STORAGE_KEY = "time-tracker-tasks";
 
-//
-
 export default function TimeTracker() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -92,7 +90,6 @@ export default function TimeTracker() {
     const [repeatEvery, setRepeatEvery] = useState<"day" | "week">("day");
     const [weekdaysOnly, setWeekdaysOnly] = useState<boolean>(false);
     const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
-    //
 
     // Load tasks from localStorage on initial render
     useEffect(() => {
@@ -170,6 +167,7 @@ export default function TimeTracker() {
             setShowCreateModal(true);
         },
         onUnselectTask: () => setSelectedTaskId(null),
+        onDeleteTask: () => selectedTaskId && deleteTask(selectedTaskId),
     });
 
     // Generate time slots from 7 AM to 12 AM (68 slots of 15 minutes each)
@@ -257,8 +255,6 @@ export default function TimeTracker() {
         const dx = e.clientX - dragOperation.startPosition.x;
         const dy = e.clientY - dragOperation.startPosition.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-
-        //
 
         // If we're in click state and moved more than 5px, transition to drag
         if (dragOperation.type === "click" && distance > 5) {
