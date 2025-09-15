@@ -80,6 +80,12 @@ export function Instructions() {
                                     Unselect task / close modals
                                 </li>
                                 <li>
+                                    <span className="font-medium">
+                                        Delete/Backspace
+                                    </span>
+                                    : Delete selected task
+                                </li>
+                                <li>
                                     <span className="font-medium">\\</span>:
                                     Toggle dark/light mode
                                 </li>
