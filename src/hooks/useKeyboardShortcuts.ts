@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { toggleTheme } from "@/app/actions/theme";
 
 interface UseKeyboardShortcutsProps {
     onPreviousDay: () => void;
@@ -64,16 +65,13 @@ export function useKeyboardShortcuts({
                     break;
                 case "\\":
                     e.preventDefault();
-                    // toggle theme by toggling data-theme or class
-                    const html = document.documentElement;
-                    const isDark = html.classList.contains("dark");
-                    if (isDark) {
-                        html.classList.remove("dark");
-                        localStorage.setItem("theme", "light");
-                    } else {
-                        html.classList.add("dark");
-                        localStorage.setItem("theme", "dark");
-                    }
+                    // Persist theme on server and update UI immediately
+                    (async () => {
+                        const html = document.documentElement;
+                        const willBeDark = !html.classList.contains("dark");
+                        await toggleTheme();
+                        html.classList.toggle("dark", willBeDark);
+                    })();
                     break;
             }
         };
