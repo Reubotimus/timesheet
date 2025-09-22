@@ -1,6 +1,6 @@
 "use client";
 
-import type React from "react";
+import React from "react";
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { format, addDays, subDays, addWeeks, isWeekend } from "date-fns";
@@ -87,7 +87,6 @@ export default function TimeTracker() {
     const titleInputRef = useRef<HTMLInputElement>(null);
 
     const [templates, setTemplates] = useState<TaskTemplate[]>([]);
-    const [theme, setTheme] = useState<"light" | "dark">("light");
     const [repeatCount, setRepeatCount] = useState<number>(0);
     const [repeatEvery, setRepeatEvery] = useState<"day" | "week">("day");
     const [weekdaysOnly, setWeekdaysOnly] = useState<boolean>(false);
@@ -129,24 +128,7 @@ export default function TimeTracker() {
         );
     }, [templates]);
 
-    // Theme initialization
-    useEffect(() => {
-        const saved = localStorage.getItem("theme");
-        const prefersDark =
-            saved === "dark" ||
-            (!saved &&
-                window.matchMedia &&
-                window.matchMedia("(prefers-color-scheme: dark)").matches);
-        document.documentElement.classList.toggle("dark", !!prefersDark);
-        setTheme(prefersDark ? "dark" : "light");
-    }, []);
-
-    const toggleTheme = () => {
-        const next = theme === "dark" ? "light" : "dark";
-        setTheme(next);
-        localStorage.setItem("theme", next);
-        document.documentElement.classList.toggle("dark", next === "dark");
-    };
+    // Theme is managed on the server via cookies; client code avoids local state
 
     // Filter tasks for selected date
     const filteredTasks = tasks.filter(
@@ -878,10 +860,8 @@ export default function TimeTracker() {
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
             <Header
                 selectedDate={selectedDate}
-                theme={theme}
                 onPreviousDay={handlePreviousDay}
                 onNextDay={handleNextDay}
-                onToggleTheme={toggleTheme}
             />
 
             {/* Main Content with top padding for fixed header and right margin for sidebar */}
