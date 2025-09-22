@@ -94,6 +94,80 @@ export default function TimeTracker() {
     const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
     //
 
+    // Overlap helpers
+    const rangesOverlap = (
+        aStart: number,
+        aEnd: number,
+        bStart: number,
+        bEnd: number,
+    ) => aStart < bEnd && aEnd > bStart;
+
+    const hasOverlapOnDate = (
+        date: string,
+        start: number,
+        end: number,
+        excludeTaskId?: string,
+    ) => {
+        return tasks.some(
+            (t: Task) =>
+                t.date === date &&
+                t.id !== excludeTaskId &&
+                rangesOverlap(start, end, t.startSlot, t.endSlot),
+        );
+    };
+
+    const adjustStartAvoidOverlap = (
+        date: string,
+        desiredStart: number,
+        end: number,
+        excludeTaskId?: string,
+    ) => {
+        let adjusted = Math.max(0, Math.min(SLOT_COUNT - 1, desiredStart));
+        // Find blockers that would overlap with [adjusted, end)
+        const blockers = tasks.filter(
+            (t: Task) =>
+                t.date === date &&
+                t.id !== excludeTaskId &&
+                rangesOverlap(adjusted, end, t.startSlot, t.endSlot),
+        );
+        if (blockers.length === 0) return Math.min(adjusted, end - 1);
+        const maxEndBefore = blockers.reduce((max: number, t: Task) => {
+            if (t.endSlot <= end) {
+                return Math.max(max, t.endSlot);
+            }
+            return max;
+        }, 0);
+        adjusted = Math.max(adjusted, maxEndBefore);
+        adjusted = Math.min(adjusted, end - 1);
+        return adjusted;
+    };
+
+    const adjustEndAvoidOverlap = (
+        date: string,
+        start: number,
+        desiredEnd: number,
+        excludeTaskId?: string,
+    ) => {
+        let adjusted = Math.max(start + 1, Math.min(SLOT_COUNT, desiredEnd));
+        // Find blockers that would overlap with [start, adjusted)
+        const blockers = tasks.filter(
+            (t: Task) =>
+                t.date === date &&
+                t.id !== excludeTaskId &&
+                rangesOverlap(start, adjusted, t.startSlot, t.endSlot),
+        );
+        if (blockers.length === 0) return Math.max(adjusted, start + 1);
+        const minStartAfter = blockers.reduce((min: number, t: Task) => {
+            if (t.startSlot >= start) {
+                return Math.min(min, t.startSlot);
+            }
+            return min;
+        }, SLOT_COUNT);
+        adjusted = Math.min(adjusted, minStartAfter);
+        adjusted = Math.max(adjusted, start + 1);
+        return adjusted;
+    };
+
     // Load tasks from localStorage on initial render
     useEffect(() => {
         const savedTasks = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -312,26 +386,50 @@ export default function TimeTracker() {
                         if (task.id !== dragOperation.resizingTask) return task;
 
                         if (dragOperation.resizeType === "start") {
-                            const newStartSlot = Math.min(
+                            const desiredStart = Math.min(
                                 dragOperation.currentSlot,
                                 task.endSlot - 1,
                             );
-                            const finalStartSlot = Math.max(0, newStartSlot);
-
-                            // Ensure we don't conflict with other tasks
-                            const adjustedStartSlot = finalStartSlot;
-                            // allow overlaps: no occupancy loop
-
-                            return { ...task, startSlot: adjustedStartSlot };
+                            const finalStart = adjustStartAvoidOverlap(
+                                task.date,
+                                Math.max(0, desiredStart),
+                                task.endSlot,
+                                task.id,
+                            );
+                            if (
+                                hasOverlapOnDate(
+                                    task.date,
+                                    finalStart,
+                                    task.endSlot,
+                                    task.id,
+                                )
+                            ) {
+                                return task; // reject resize if still overlapping
+                            }
+                            return { ...task, startSlot: finalStart };
                         } else {
-                            const newEndSlot = Math.max(
+                            const desiredEnd = Math.max(
                                 dragOperation.currentSlot + 1,
                                 task.startSlot + 1,
                             );
-                            const finalEndSlot = Math.min(68, newEndSlot);
-
-                            // Allow overlaps. Just clamp to grid and ensure >= start+1
-                            return { ...task, endSlot: finalEndSlot };
+                            const clampedDesiredEnd = Math.min(SLOT_COUNT, desiredEnd);
+                            const finalEnd = adjustEndAvoidOverlap(
+                                task.date,
+                                task.startSlot,
+                                clampedDesiredEnd,
+                                task.id,
+                            );
+                            if (
+                                hasOverlapOnDate(
+                                    task.date,
+                                    task.startSlot,
+                                    finalEnd,
+                                    task.id,
+                                )
+                            ) {
+                                return task; // reject resize if still overlapping
+                            }
+                            return { ...task, endSlot: finalEnd };
                         }
                     }),
                 );
@@ -348,6 +446,12 @@ export default function TimeTracker() {
                     ) + 1;
 
                 if (endSlot > startSlot) {
+                    const dateStr = format(selectedDate, "yyyy-MM-dd");
+                    if (hasOverlapOnDate(dateStr, startSlot, endSlot)) {
+                        // Do not create overlapping tasks
+                        // no-op
+                        
+                    } else {
                     const newTask: Task = {
                         id: Date.now().toString(),
                         startSlot,
@@ -355,10 +459,11 @@ export default function TimeTracker() {
                         title: "",
                         description: "",
                         colorIndex: filteredTasks.length % COLORS.length,
-                        date: format(selectedDate, "yyyy-MM-dd"),
+                            date: dateStr,
                     };
                     setTasks((prev: Task[]) => [...prev, newTask]);
                     setSelectedTaskId(newTask.id);
+                    }
                 }
             }
         }
@@ -400,10 +505,33 @@ export default function TimeTracker() {
                             newEnd = SLOT_COUNT;
                         }
                     }
+                    // Prevent overlaps with other tasks on the same date
+                    const adjustedStart = adjustStartAvoidOverlap(
+                        task.date,
+                        newStart,
+                        newEnd,
+                        task.id,
+                    );
+                    const adjustedEnd = adjustEndAvoidOverlap(
+                        task.date,
+                        adjustedStart,
+                        newEnd,
+                        task.id,
+                    );
+                    if (
+                        hasOverlapOnDate(
+                            task.date,
+                            adjustedStart,
+                            adjustedEnd,
+                            task.id,
+                        )
+                    ) {
+                        return task; // reject update if still overlapping
+                    }
                     const sanitized: Partial<Task> = {
                         ...updates,
-                        startSlot: newStart,
-                        endSlot: newEnd,
+                        startSlot: adjustedStart,
+                        endSlot: adjustedEnd,
                     };
                     return { ...task, ...sanitized };
                 }
@@ -765,6 +893,12 @@ export default function TimeTracker() {
             endSlot = startSlot + 1;
         }
 
+        const dateStr = format(selectedDate, "yyyy-MM-dd");
+        if (hasOverlapOnDate(dateStr, startSlot, endSlot)) {
+            // Do not create overlapping tasks
+            return;
+        }
+
         const seriesKeyBase = `${taskData.title}|${taskData.description}|${startSlot}|${endSlot}`;
 
         const baseTask: Task = {
@@ -774,7 +908,7 @@ export default function TimeTracker() {
             title: taskData.title,
             description: taskData.description,
             colorIndex: filteredTasks.length % COLORS.length,
-            date: format(selectedDate, "yyyy-MM-dd"),
+            date: dateStr,
             isRepeated: Boolean(
                 taskData.repeatCount && taskData.repeatCount > 0,
             ),
