@@ -3,12 +3,13 @@
 import { useEffect } from "react";
 
 interface UseKeyboardShortcutsProps {
-    onPreviousDay: () => void;
-    onNextDay: () => void;
-    onToday: () => void;
-    onCreateTask: () => void;
+    onPreviousDay : () => void;
+    onNextDay     : () => void;
+    onToday       : () => void;
+    onCreateTask  : () => void;
     onUnselectTask: () => void;
-    onDeleteTask: () => void;
+    onDeleteTask  : () => void;
+    onUndo        : () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -18,11 +19,12 @@ export function useKeyboardShortcuts({
     onCreateTask,
     onUnselectTask,
     onDeleteTask,
+    onUndo,
 }: UseKeyboardShortcutsProps) {
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             const activeElement = document.activeElement as HTMLElement | null;
-            const tagName = activeElement?.tagName;
+            const tagName       = activeElement?.tagName;
 
             // Always handle ESC key, regardless of focus
             if (e.key === "Escape") {
@@ -35,7 +37,14 @@ export function useKeyboardShortcuts({
                 return;
             }
 
-            // Don't handle other shortcuts when user is typing in input fields
+            // Handle Ctrl+Z to undo even when typing
+            if (e.ctrlKey && e.key === "z") {
+                e.preventDefault();
+                onUndo();
+                return;
+            }
+
+            // Don't handle other shortcuts when typing
             if (
                 activeElement?.isContentEditable ||
                 tagName === "INPUT" ||
@@ -54,8 +63,8 @@ export function useKeyboardShortcuts({
                     e.preventDefault();
                     onNextDay();
                     break;
-                case "Delete":
-                case "Backspace":
+                case "Delete"   :
+                case "Backspace": 
                     e.preventDefault();
                     onDeleteTask();
                     break;
@@ -71,8 +80,8 @@ export function useKeyboardShortcuts({
                     break;
                 case "\\":
                     e.preventDefault();
-                    // toggle theme by toggling data-theme or class
-                    const html = document.documentElement;
+                    // Toggle theme by toggling data-theme or class
+                    const html   = document.documentElement;
                     const isDark = html.classList.contains("dark");
                     if (isDark) {
                         html.classList.remove("dark");
@@ -94,5 +103,6 @@ export function useKeyboardShortcuts({
         onCreateTask,
         onUnselectTask,
         onDeleteTask,
+        onUndo,
     ]);
 }

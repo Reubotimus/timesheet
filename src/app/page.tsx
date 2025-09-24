@@ -13,39 +13,39 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 
 interface Task {
-    id: string;
-    startSlot: number;
-    endSlot: number;
-    title: string;
-    description: string;
-    colorIndex: number;
-    date: string; // ISO date string
-    isRepeated?: boolean;
-    seriesKey?: string; // deterministic grouping for repeated series
+    id          : string;
+    startSlot   : number;
+    endSlot     : number;
+    title       : string;
+    description : string;
+    colorIndex  : number;
+    date        : string;   // ISO date string
+    isRepeated ?: boolean;
+    seriesKey  ?: string;   // deterministic grouping for repeated series
 }
 
 type DragOperationType = "none" | "click" | "drag";
 
 interface DragOperation {
-    type: DragOperationType;
-    startTime: number;
-    startPosition: { x: number; y: number; slot: number };
-    currentSlot: number;
-    resizingTask?: string;
-    resizeType?: "start" | "end";
+    type          : DragOperationType;
+    startTime     : number;
+    startPosition : { x: number; y: number; slot: number };
+    currentSlot   : number;
+    resizingTask ?: string;
+    resizeType   ?: "start" | "end";
     taskStartSlot?: number;
-    taskEndSlot?: number;
+    taskEndSlot  ?: number;
 }
 
 interface TaskTemplate {
-    title: string;
+    title      : string;
     description: string;
-    colorIndex: number;
+    colorIndex : number;
 }
 
 const LOCAL_STORAGE_TEMPLATES_KEY = "time-tracker-templates";
-const SLOT_HEIGHT = 40;
-const SLOT_COUNT = 68;
+const SLOT_HEIGHT                 = 40;
+const SLOT_COUNT                  = 68;
 
 const COLORS = [
     "bg-blue-200 border-blue-400 text-blue-900 dark:bg-blue-800 dark:border-blue-600 dark:text-blue-100",
@@ -71,35 +71,47 @@ const COLORS = [
 const LOCAL_STORAGE_KEY = "time-tracker-tasks";
 
 export default function TimeTracker() {
-    const [tasks, setTasks] = useState<Task[]>([]);
+    const [tasks, setTasks]                   = useState<Task[]>([]);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-    const [dragOperation, setDragOperation] = useState<DragOperation>({
-        type: "none",
-        startTime: 0,
+    const [selectedDate, setSelectedDate]     = useState<Date>(new Date());
+    const [dragOperation, setDragOperation]   = useState<DragOperation>({
+        type         : "none",
+        startTime    : 0,
         startPosition: { x: 0, y: 0, slot: 0 },
-        currentSlot: 0,
+        currentSlot  : 0,
     });
     const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
-    const gridRef = useRef<HTMLDivElement | null>(null);
-    const titleInputRef = useRef<HTMLInputElement>(null);
+    const gridRef                         = useRef<HTMLDivElement | null>(null);
+    const titleInputRef                   = useRef<HTMLInputElement>(null);
 
-    const [templates, setTemplates] = useState<TaskTemplate[]>([]);
-    const [theme, setTheme] = useState<"light" | "dark">("light");
-    const [repeatCount, setRepeatCount] = useState<number>(0);
-    const [repeatEvery, setRepeatEvery] = useState<"day" | "week">("day");
-    const [weekdaysOnly, setWeekdaysOnly] = useState<boolean>(false);
+    const [templates, setTemplates]             = useState<TaskTemplate[]>([]);
+    const [theme, setTheme]                     = useState<"light" | "dark">("light");
+    const [repeatCount, setRepeatCount]         = useState<number>(0);
+    const [repeatEvery, setRepeatEvery]         = useState<"day" | "week">("day");
+    const [weekdaysOnly, setWeekdaysOnly]       = useState<boolean>(false);
     const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+
+    // Undo/Redo history management
+    const [taskHistory, setTaskHistory]   = useState<Task[][]>([]);
+    const [historyIndex, setHistoryIndex] = useState<number>(-1);
 
     // Load tasks from localStorage on initial render
     useEffect(() => {
         const savedTasks = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (savedTasks) {
             try {
-                setTasks(JSON.parse(savedTasks));
+                const parsedTasks = JSON.parse(savedTasks);
+                setTasks(parsedTasks);
+                // Initialize history with loaded tasks
+                setTaskHistory([parsedTasks]);
+                setHistoryIndex(0);
             } catch (error) {
                 console.error("Failed to parse saved tasks:", error);
             }
+        } else {
+            // Initialize with empty history
+            setTaskHistory([[]]);
+            setHistoryIndex(0);
         }
     }, []);
 
@@ -158,25 +170,45 @@ export default function TimeTracker() {
         setSelectedDate((prev: Date) => addDays(prev, 1));
     };
 
+    // History management functions
+    const saveToHistory = (newTasks: Task[]) => {
+        setTaskHistory((prev) => {
+            const newHistory = prev.slice(0, historyIndex + 1);
+            newHistory.push([...newTasks]);
+            // Limit history to 50 entries
+            return newHistory.slice(-50);
+        });
+        setHistoryIndex((prev) => Math.min(prev + 1, 49));
+    };
+
+    const undo = () => {
+        if (historyIndex > 0) {
+            const newIndex = historyIndex - 1;
+            setHistoryIndex(newIndex);
+            setTasks([...taskHistory[newIndex]]);
+        }
+    };
+
     // Keyboard shortcuts
     useKeyboardShortcuts({
         onPreviousDay: handlePreviousDay,
-        onNextDay: handleNextDay,
-        onToday: () => setSelectedDate(new Date()),
-        onCreateTask: () => {
+        onNextDay    : handleNextDay,
+        onToday      : () => setSelectedDate(new Date()),
+        onCreateTask : () => {
             setShowCreateModal(true);
         },
         onUnselectTask: () => setSelectedTaskId(null),
-        onDeleteTask: () => selectedTaskId && deleteTask(selectedTaskId),
+        onDeleteTask  : () => selectedTaskId && deleteTask(selectedTaskId),
+        onUndo        : undo,
     });
 
     // Generate time slots from 7 AM to 12 AM (68 slots of 15 minutes each)
     const timeSlots = Array.from({ length: SLOT_COUNT }, (_, i) => {
         const totalMinutes = 7 * 60 + i * 15;
-        const hours = Math.floor(totalMinutes / 60) % 24;
-        const minutes = totalMinutes % 60;
-        const period = hours >= 12 ? "PM" : "AM";
-        const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+        const hours        = Math.floor(totalMinutes / 60) % 24;
+        const minutes      = totalMinutes % 60;
+        const period       = hours >= 12 ? "PM" : "AM";
+        const displayHours = hours   === 0 ? 12 : hours > 12 ? hours - 12 : hours;
         return `${displayHours}:${minutes
             .toString()
             .padStart(2, "0")} ${period}`;
@@ -188,9 +220,9 @@ export default function TimeTracker() {
 
     const getSlotFromY = useCallback((y: number) => {
         if (!gridRef.current) return 0;
-        const rect = gridRef.current.getBoundingClientRect();
-        const relativeY = y - rect.top;
-        const slotHeight = SLOT_HEIGHT; // Each slot is 40px high
+        const rect       = gridRef.current.getBoundingClientRect();
+        const relativeY  = y - rect.top;
+        const slotHeight = SLOT_HEIGHT;                              // Each slot is 40px high
         return Math.max(
             0,
             Math.min(SLOT_COUNT - 1, Math.floor(relativeY / slotHeight)),
@@ -220,7 +252,7 @@ export default function TimeTracker() {
 
             // Get the task's DOM element
             const taskElement = e.currentTarget as HTMLElement;
-            const taskRect = taskElement.getBoundingClientRect();
+            const taskRect    = taskElement.getBoundingClientRect();
 
             // Calculate if we're in the top or bottom half based on mouse position
             const relativeY = e.clientY - taskRect.top;
@@ -229,21 +261,21 @@ export default function TimeTracker() {
             // debug removed
 
             setDragOperation({
-                type: "click",
-                startTime: Date.now(),
+                type         : "click",
+                startTime    : Date.now(),
                 startPosition: { x: e.clientX, y: e.clientY, slot },
-                currentSlot: slot,
-                resizingTask: clickedTask.id,
-                resizeType: isTopHalf ? "start" : "end",
+                currentSlot  : slot,
+                resizingTask : clickedTask.id,
+                resizeType   : isTopHalf ? "start":"end",
                 taskStartSlot: clickedTask.startSlot,
-                taskEndSlot: clickedTask.endSlot,
+                taskEndSlot  : clickedTask.endSlot,
             });
         } else {
             setDragOperation({
-                type: "click",
-                startTime: Date.now(),
+                type         : "click",
+                startTime    : Date.now(),
                 startPosition: { x: e.clientX, y: e.clientY, slot },
-                currentSlot: slot,
+                currentSlot  : slot,
             });
         }
     };
@@ -252,9 +284,9 @@ export default function TimeTracker() {
         if (dragOperation.type === "none") return;
 
         const currentSlot = getSlotFromY(e.clientY);
-        const dx = e.clientX - dragOperation.startPosition.x;
-        const dy = e.clientY - dragOperation.startPosition.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const dx          = e.clientX - dragOperation.startPosition.x;
+        const dy          = e.clientY - dragOperation.startPosition.y;
+        const distance    = Math.sqrt(dx * dx + dy * dy);
 
         // If we're in click state and moved more than 5px, transition to drag
         if (dragOperation.type === "click" && distance > 5) {
@@ -284,15 +316,19 @@ export default function TimeTracker() {
             if (!clickedTask) {
                 // Create a single-cell task
                 const newTask: Task = {
-                    id: Date.now().toString(),
-                    startSlot: slot,
-                    endSlot: slot + 1,
-                    title: "",
+                    id         : Date.now().toString(),
+                    startSlot  : slot,
+                    endSlot    : slot + 1,
+                    title      : "",
                     description: "",
-                    colorIndex: filteredTasks.length % COLORS.length,
-                    date: format(selectedDate, "yyyy-MM-dd"),
+                    colorIndex : filteredTasks.length % COLORS.length,
+                    date       : format(selectedDate, "yyyy-MM-dd"),
                 };
-                setTasks((prev: Task[]) => [...prev, newTask]);
+                setTasks((prev: Task[]) => {
+                    const newTasks = [...prev, newTask];
+                    saveToHistory(newTasks);
+                    return newTasks;
+                });
                 setSelectedTaskId(newTask.id);
             } else if (clickedTask && titleInputRef.current) {
                 // Focus the title input when clicking an existing task
@@ -303,8 +339,8 @@ export default function TimeTracker() {
         else if (dragOperation.type === "drag") {
             if (dragOperation.resizingTask) {
                 // Resize existing task
-                setTasks((prev: Task[]) =>
-                    prev.map((task: Task) => {
+                setTasks((prev: Task[]) => {
+                    const newTasks = prev.map((task: Task) => {
                         if (task.id !== dragOperation.resizingTask) return task;
 
                         if (dragOperation.resizeType === "start") {
@@ -329,8 +365,10 @@ export default function TimeTracker() {
                             // Allow overlaps. Just clamp to grid and ensure >= start+1
                             return { ...task, endSlot: finalEndSlot };
                         }
-                    }),
-                );
+                    });
+                    saveToHistory(newTasks);
+                    return newTasks;
+                });
             } else {
                 // Create new task
                 const startSlot = Math.min(
@@ -348,12 +386,16 @@ export default function TimeTracker() {
                         id: Date.now().toString(),
                         startSlot,
                         endSlot,
-                        title: "",
+                        title      : "",
                         description: "",
-                        colorIndex: filteredTasks.length % COLORS.length,
-                        date: format(selectedDate, "yyyy-MM-dd"),
+                        colorIndex : filteredTasks.length % COLORS.length,
+                        date       : format(selectedDate, "yyyy-MM-dd"),
                     };
-                    setTasks((prev: Task[]) => [...prev, newTask]);
+                    setTasks((prev: Task[]) => {
+                        const newTasks = [...prev, newTask];
+                        saveToHistory(newTasks);
+                        return newTasks;
+                    });
                     setSelectedTaskId(newTask.id);
                 }
             }
@@ -361,16 +403,16 @@ export default function TimeTracker() {
 
         // Reset drag operation
         setDragOperation({
-            type: "none",
-            startTime: 0,
+            type         : "none",
+            startTime    : 0,
             startPosition: { x: 0, y: 0, slot: 0 },
-            currentSlot: 0,
+            currentSlot  : 0,
         });
     };
 
     const updateTask = (taskId: string, updates: Partial<Task>) => {
-        setTasks((prev: Task[]) =>
-            prev.map((task: Task) => {
+        setTasks((prev: Task[]) => {
+            const newTasks = prev.map((task: Task) => {
                 if (task.id !== taskId) return task;
                 // Enforce minimum duration of 1 slot (15 minutes)
                 let newStart =
@@ -405,14 +447,18 @@ export default function TimeTracker() {
                 }
 
                 return { ...task, ...updates };
-            }),
-        );
+            });
+            saveToHistory(newTasks);
+            return newTasks;
+        });
     };
 
     const deleteTask = (taskId: string) => {
-        setTasks((prev: Task[]) =>
-            prev.filter((task: Task) => task.id !== taskId),
-        );
+        setTasks((prev: Task[]) => {
+            const newTasks = prev.filter((task: Task) => task.id !== taskId);
+            saveToHistory(newTasks);
+            return newTasks;
+        });
         setSelectedTaskId(null);
     };
 
@@ -447,7 +493,7 @@ export default function TimeTracker() {
                 );
                 return {
                     startSlot: Math.max(0, newStartSlot),
-                    endSlot: task.endSlot,
+                    endSlot  : task.endSlot,
                 };
             } else {
                 const newEndSlot = Math.max(
@@ -456,7 +502,7 @@ export default function TimeTracker() {
                 );
                 return {
                     startSlot: task.startSlot,
-                    endSlot: Math.min(SLOT_COUNT, newEndSlot),
+                    endSlot  : Math.min(SLOT_COUNT, newEndSlot),
                 };
             }
         }
@@ -499,11 +545,11 @@ export default function TimeTracker() {
                             id: values[0] || Date.now().toString(),
                             date:
                                 values[1] || format(selectedDate, "yyyy-MM-dd"),
-                            startSlot: Number(values[2]) || 0,
-                            endSlot: Number(values[3]) || 1,
-                            title: values[4]?.replace(/"/g, "") || "",
+                            startSlot  : Number(values[2]) || 0,
+                            endSlot    : Number(values[3]) || 1,
+                            title      : values[4]?.replace(/"/g, "") || "",
                             description: values[5]?.replace(/"/g, "") || "",
-                            colorIndex: isNaN(Number(values[6]))
+                            colorIndex : isNaN(Number(values[6]))
                                 ? COLORS.findIndex((c) => c === values[6]) || 0
                                 : Number(values[6]) || 0,
                         };
@@ -523,12 +569,12 @@ export default function TimeTracker() {
                     .map((t) => {
                         const obj = t as { [key: string]: unknown };
                         return {
-                            id: String(obj.id ?? Date.now().toString()),
-                            startSlot: Number(obj.startSlot ?? 0),
-                            endSlot: Number(obj.endSlot ?? 1),
-                            title: String(obj.title ?? ""),
+                            id         : String(obj.id ?? Date.now().toString()),
+                            startSlot  : Number(obj.startSlot ?? 0),
+                            endSlot    : Number(obj.endSlot ?? 1),
+                            title      : String(obj.title ?? ""),
                             description: String(obj.description ?? ""),
-                            colorIndex:
+                            colorIndex :
                                 typeof obj.colorIndex === "number"
                                     ? (obj.colorIndex as number)
                                     : typeof obj.color === "string"
@@ -551,12 +597,12 @@ export default function TimeTracker() {
 
     // Export helpers
     const exportTasksJSON = () => {
-        const dataStr = JSON.stringify(tasks, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "timesheet.json";
+        const dataStr    = JSON.stringify(tasks, null, 2);
+        const blob       = new Blob([dataStr], { type: "application/json" });
+        const url        = URL.createObjectURL(blob);
+        const a          = document.createElement("a");
+              a.href     = url;
+              a.download = "timesheet.json";
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -582,12 +628,12 @@ export default function TimeTracker() {
                 t.colorIndex,
             ].join(","),
         );
-        const csv = [header.join(","), ...rows].join("\n");
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "timesheet.csv";
+        const csv        = [header.join(","), ...rows].join("\n");
+        const blob       = new Blob([csv], { type: "text/csv" });
+        const url        = URL.createObjectURL(blob);
+        const a          = document.createElement("a");
+              a.href     = url;
+              a.download = "timesheet.csv";
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -603,24 +649,28 @@ export default function TimeTracker() {
     const applyTemplateToSelected = (tpl: TaskTemplate) => {
         if (selectedTask) {
             updateTask(selectedTask.id, {
-                title: tpl.title,
+                title      : tpl.title,
                 description: tpl.description,
-                colorIndex: tpl.colorIndex,
+                colorIndex : tpl.colorIndex,
             });
         } else {
             const today = format(selectedDate, "yyyy-MM-dd");
             let slot = 0;
             while (slot < SLOT_COUNT - 1 && isSlotOccupied(slot)) slot++;
             const newTask: Task = {
-                id: Date.now().toString(),
-                startSlot: slot,
-                endSlot: slot + 1,
-                title: tpl.title,
+                id         : Date.now().toString(),
+                startSlot  : slot,
+                endSlot    : slot + 1,
+                title      : tpl.title,
                 description: tpl.description,
-                colorIndex: tpl.colorIndex,
-                date: today,
+                colorIndex : tpl.colorIndex,
+                date       : today,
             };
-            setTasks((prev: Task[]) => [...prev, newTask]);
+            setTasks((prev: Task[]) => {
+                const newTasks = [...prev, newTask];
+                saveToHistory(newTasks);
+                return newTasks;
+            });
             setSelectedTaskId(newTask.id);
         }
     };
@@ -658,7 +708,7 @@ export default function TimeTracker() {
                 }
             }
 
-            const dateStr = format(nextDate, "yyyy-MM-dd");
+            const dateStr  = format(nextDate, "yyyy-MM-dd");
             const dayTasks = tasks.filter((t: Task) => t.date === dateStr);
             const conflict = dayTasks.some(
                 (t: Task) =>
@@ -668,10 +718,10 @@ export default function TimeTracker() {
             if (!conflict) {
                 const newTask: Task = {
                     ...base,
-                    id: (Date.now() + occurrence).toString(),
-                    date: dateStr,
+                    id        : (Date.now() + occurrence).toString(),
+                    date      : dateStr,
                     isRepeated: true,
-                    seriesKey: key,
+                    seriesKey : key,
                 };
                 tasksToCreate.push(newTask);
             }
@@ -679,7 +729,11 @@ export default function TimeTracker() {
 
         // Add all new tasks at once
         if (tasksToCreate.length > 0) {
-            setTasks((prev: Task[]) => [...prev, ...tasksToCreate]);
+            setTasks((prev: Task[]) => {
+                const newTasks = [...prev, ...tasksToCreate];
+                saveToHistory(newTasks);
+                return newTasks;
+            });
         }
     };
 
@@ -694,16 +748,20 @@ export default function TimeTracker() {
         const tasksToDelete = tasks.filter((t) => {
             return (
                 (t.seriesKey
-                    ? t.seriesKey === key
-                    : t.title === task.title &&
+                    ? t.seriesKey   === key
+                    : t.title       === task.title &&
                       t.description === task.description &&
-                      t.startSlot === task.startSlot &&
-                      t.endSlot === task.endSlot) && t.date >= task.date
+                      t.startSlot   === task.startSlot &&
+                      t.endSlot     === task.endSlot) && t.date >= task.date
             );
         });
 
         const idsToDelete = tasksToDelete.map((t) => t.id);
-        setTasks((prev) => prev.filter((t) => !idsToDelete.includes(t.id)));
+        setTasks((prev) => {
+            const newTasks = prev.filter((t) => !idsToDelete.includes(t.id));
+            saveToHistory(newTasks);
+            return newTasks;
+        });
     };
 
     const deleteAllInSeries = (taskId: string) => {
@@ -712,47 +770,49 @@ export default function TimeTracker() {
         const key =
             task.seriesKey ||
             `${task.title}|${task.description}|${task.startSlot}|${task.endSlot}`;
-        setTasks((prev) =>
-            prev.filter((t) =>
+        setTasks((prev) => {
+            const newTasks = prev.filter((t) =>
                 t.seriesKey
                     ? t.seriesKey !== key
                     : !(
-                          t.title === task.title &&
+                          t.title       === task.title &&
                           t.description === task.description &&
-                          t.startSlot === task.startSlot &&
-                          t.endSlot === task.endSlot
+                          t.startSlot   === task.startSlot &&
+                          t.endSlot     === task.endSlot
                       ),
-            ),
-        );
+            );
+            saveToHistory(newTasks);
+            return newTasks;
+        });
         setSelectedTaskId(null);
     };
 
     const timeToSlot = (timeStr: string): number => {
-        const [time, period] = timeStr.split(" ");
-        const [hours, minutes] = time.split(":").map(Number);
-        let totalHours = hours;
-        if (period === "PM" && hours !== 12) totalHours += 12;
-        if (period === "AM" && hours === 12) totalHours = 0;
-        const totalMinutes = totalHours * 60 + minutes;
-        const startMinutes = 7 * 60; // 7 AM
+        const [time, period]                                = timeStr.split(" ");
+        const [hours, minutes]                              = time.split(":").map(Number);
+        let   totalHours                                    = hours;
+        if    (period === "PM" && hours !== 12) totalHours += 12;
+        if    (period === "AM" && hours === 12) totalHours  = 0;
+        const totalMinutes                                  = totalHours * 60 + minutes;
+        const startMinutes                                  = 7 * 60;                       // 7 AM
         return Math.max(0, Math.floor((totalMinutes - startMinutes) / 15));
     };
 
     const createTaskFromModal = (taskData: {
-        title: string;
-        description: string;
-        startTime: string;
-        endTime: string;
-        repeatCount?: number;
-        repeatEvery?: "day" | "week";
+        title        : string;
+        description  : string;
+        startTime    : string;
+        endTime      : string;
+        repeatCount ?: number;
+        repeatEvery ?: "day" | "week";
         weekdaysOnly?: boolean;
     }) => {
         let startSlot = 0;
         let endSlot = 1;
 
         if (taskData.startTime && taskData.endTime) {
-            startSlot = timeToSlot(taskData.startTime);
-            endSlot = timeToSlot(taskData.endTime);
+               startSlot                      = timeToSlot(taskData.startTime);
+               endSlot                        = timeToSlot(taskData.endTime);
             if (endSlot <= startSlot) endSlot = startSlot + 1;
         } else {
             // Find first available slot
@@ -767,11 +827,11 @@ export default function TimeTracker() {
             id: Date.now().toString(),
             startSlot,
             endSlot,
-            title: taskData.title,
+            title      : taskData.title,
             description: taskData.description,
-            colorIndex: filteredTasks.length % COLORS.length,
-            date: format(selectedDate, "yyyy-MM-dd"),
-            isRepeated: Boolean(
+            colorIndex : filteredTasks.length % COLORS.length,
+            date       : format(selectedDate, "yyyy-MM-dd"),
+            isRepeated : Boolean(
                 taskData.repeatCount && taskData.repeatCount > 0,
             ),
             seriesKey:
@@ -808,7 +868,7 @@ export default function TimeTracker() {
                     }
                 }
 
-                const dateStr = format(nextDate, "yyyy-MM-dd");
+                const dateStr  = format(nextDate, "yyyy-MM-dd");
                 const dayTasks = tasks.filter((t: Task) => t.date === dateStr);
                 const conflict = dayTasks.some(
                     (t: Task) => startSlot < t.endSlot && endSlot > t.startSlot,
@@ -817,25 +877,29 @@ export default function TimeTracker() {
                 if (!conflict) {
                     tasksToCreate.push({
                         ...baseTask,
-                        id: (Date.now() + occurrence).toString(),
-                        date: dateStr,
+                        id        : (Date.now() + occurrence).toString(),
+                        date      : dateStr,
                         isRepeated: true,
-                        seriesKey: seriesKeyBase,
+                        seriesKey : seriesKeyBase,
                     });
                 }
             }
         }
 
-        setTasks((prev: Task[]) => [...prev, ...tasksToCreate]);
+        setTasks((prev: Task[]) => {
+            const newTasks = [...prev, ...tasksToCreate];
+            saveToHistory(newTasks);
+            return newTasks;
+        });
         setSelectedTaskId(baseTask.id);
         setShowCreateModal(false);
     };
 
     const saveTaskAsTemplate = (task: Task) => {
         const tpl: TaskTemplate = {
-            title: task.title,
+            title      : task.title,
             description: task.description,
-            colorIndex: task.colorIndex,
+            colorIndex : task.colorIndex,
         };
         setTemplates((prev: TaskTemplate[]) => [tpl, ...prev].slice(0, 50));
     };
@@ -854,13 +918,15 @@ export default function TimeTracker() {
         const key =
             task.seriesKey ||
             `${task.title}|${task.description}|${task.startSlot}|${task.endSlot}`;
-        setTasks((prev) =>
-            prev.map((t) =>
+        setTasks((prev) => {
+            const newTasks = prev.map((t) =>
                 t.id === taskId
                     ? { ...t, isRepeated: true, seriesKey: key }
                     : t,
-            ),
-        );
+            );
+            saveToHistory(newTasks);
+            return newTasks;
+        });
 
         setSelectedTaskId(taskId);
         createRepeats(key);
@@ -873,38 +939,38 @@ export default function TimeTracker() {
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
             <Header
-                selectedDate={selectedDate}
-                theme={theme}
-                onPreviousDay={handlePreviousDay}
-                onNextDay={handleNextDay}
-                onToggleTheme={toggleTheme}
+                selectedDate  = {selectedDate}
+                theme         = {theme}
+                onPreviousDay = {handlePreviousDay}
+                onNextDay     = {handleNextDay}
+                onToggleTheme = {toggleTheme}
             />
 
             {/* Main Content with top padding for fixed header and right margin for sidebar */}
             <div className="flex-1 pt-20 pr-80 p-4 mr-4">
                 <TaskGrid
-                    tasks={filteredTasks}
-                    timeSlots={timeSlots}
-                    selectedTaskId={selectedTaskId}
-                    previewSlots={previewSlots}
-                    colors={COLORS}
-                    repeatCount={repeatCount}
-                    repeatEvery={repeatEvery}
-                    weekdaysOnly={weekdaysOnly}
-                    gridRef={gridRef}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onUpdateTask={updateTask}
-                    onSaveAsTemplate={saveTaskAsTemplate}
-                    onCreateRepeats={handleCreateRepeats}
-                    onDeleteRepeatedTasks={deleteRepeatedTasks}
-                    onDeleteTask={deleteTask}
-                    onDeleteAllInSeries={deleteAllInSeries}
-                    setRepeatCount={setRepeatCount}
-                    setRepeatEvery={setRepeatEvery}
-                    setWeekdaysOnly={setWeekdaysOnly}
-                    formatTime={formatTime}
+                    tasks                 = {filteredTasks}
+                    timeSlots             = {timeSlots}
+                    selectedTaskId        = {selectedTaskId}
+                    previewSlots          = {previewSlots}
+                    colors                = {COLORS}
+                    repeatCount           = {repeatCount}
+                    repeatEvery           = {repeatEvery}
+                    weekdaysOnly          = {weekdaysOnly}
+                    gridRef               = {gridRef}
+                    onMouseDown           = {handleMouseDown}
+                    onMouseMove           = {handleMouseMove}
+                    onMouseUp             = {handleMouseUp}
+                    onUpdateTask          = {updateTask}
+                    onSaveAsTemplate      = {saveTaskAsTemplate}
+                    onCreateRepeats       = {handleCreateRepeats}
+                    onDeleteRepeatedTasks = {deleteRepeatedTasks}
+                    onDeleteTask          = {deleteTask}
+                    onDeleteAllInSeries   = {deleteAllInSeries}
+                    setRepeatCount        = {setRepeatCount}
+                    setRepeatEvery        = {setRepeatEvery}
+                    setWeekdaysOnly       = {setWeekdaysOnly}
+                    formatTime            = {formatTime}
                 />
 
                 <Instructions />
@@ -912,19 +978,19 @@ export default function TimeTracker() {
                 {/* Import/Export buttons - bottom right */}
                 <div className="mt-6 flex justify-end gap-2">
                     <input
-                        id="import-input"
-                        type="file"
-                        accept="application/json,.csv"
-                        className="hidden"
-                        onChange={onImportFileChange}
+                        id        = "import-input"
+                        type      = "file"
+                        accept    = "application/json,.csv"
+                        className = "hidden"
+                        onChange  = {onImportFileChange}
                     />
-                    <Button variant="outline" onClick={triggerImport} size="sm">
+                    <Button variant = "outline" onClick = {triggerImport} size = "sm">
                         Import
                     </Button>
-                    <div className="relative">
+                    <div className = "relative">
                         <select
-                            className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-1 text-sm pr-8 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
-                            onChange={(e) => {
+                            className = "appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-1 text-sm pr-8 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                            onChange  = {(e) => {
                                 if (e.target.value === "json") {
                                     exportTasksJSON();
                                 } else if (e.target.value === "csv") {
@@ -932,21 +998,21 @@ export default function TimeTracker() {
                                 }
                                 e.target.value = ""; // Reset selection
                             }}
-                            defaultValue=""
+                            defaultValue = ""
                         >
-                            <option value="" disabled>
+                            <option value = "" disabled>
                                 Export
                             </option>
-                            <option value="json">Export JSON</option>
-                            <option value="csv">Export CSV</option>
+                            <option value = "json">Export JSON</option>
+                            <option value = "csv">Export CSV</option>
                         </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+                        <div className = "pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
                             <svg
-                                className="fill-current h-4 w-4"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
+                                className = "fill-current h-4 w-4"
+                                xmlns     = "http://www.w3.org/2000/svg"
+                                viewBox   = "0 0 20 20"
                             >
-                                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                                <path d = "M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                             </svg>
                         </div>
                     </div>
@@ -954,27 +1020,27 @@ export default function TimeTracker() {
             </div>
 
             <CreateTaskModal
-                isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
-                onCreate={createTaskFromModal}
-                templates={templates}
-                onApplyTemplate={applyTemplateToModal}
+                isOpen          = {showCreateModal}
+                onClose         = {() => setShowCreateModal(false)}
+                onCreate        = {createTaskFromModal}
+                templates       = {templates}
+                onApplyTemplate = {applyTemplateToModal}
             />
 
             <TaskSidebar
-                selectedTask={selectedTask || null}
-                selectedDate={selectedDate}
-                tasks={tasks}
-                templates={templates}
-                copiedTaskId={copiedTaskId}
-                onSelectDate={(date) => date && setSelectedDate(date)}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onApplyTemplate={applyTemplateToSelected}
-                onDeleteTemplate={deleteTemplate}
-                onCopyTaskTitle={handleCopyTaskTitle}
-                formatTime={formatTime}
-                titleInputRef={
+                selectedTask     = {selectedTask || null}
+                selectedDate     = {selectedDate}
+                tasks            = {tasks}
+                templates        = {templates}
+                copiedTaskId     = {copiedTaskId}
+                onSelectDate     = {(date) => date && setSelectedDate(date)}
+                onUpdateTask     = {updateTask}
+                onDeleteTask     = {deleteTask}
+                onApplyTemplate  = {applyTemplateToSelected}
+                onDeleteTemplate = {deleteTemplate}
+                onCopyTaskTitle  = {handleCopyTaskTitle}
+                formatTime       = {formatTime}
+                titleInputRef    = {
                     titleInputRef as React.RefObject<HTMLInputElement>
                 }
             />
