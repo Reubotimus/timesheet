@@ -49,23 +49,23 @@ const SLOT_COUNT                  = 68;
 
 const COLORS = [
     "bg-blue-200 border-blue-400 text-blue-900 dark:bg-blue-800 dark:border-blue-600 dark:text-blue-100",
-    "bg-green-200 border-green-400 text-green-900 dark:bg-green-800 dark:border-green-600 dark:text-green-100",
-    "bg-yellow-200 border-yellow-400 text-yellow-900 dark:bg-yellow-800 dark:border-yellow-600 dark:text-yellow-100",
-    "bg-purple-200 border-purple-400 text-purple-900 dark:bg-purple-800 dark:border-purple-600 dark:text-purple-100",
-    "bg-pink-200 border-pink-400 text-pink-900 dark:bg-pink-800 dark:border-pink-600 dark:text-pink-100",
-    "bg-indigo-200 border-indigo-400 text-indigo-900 dark:bg-indigo-800 dark:border-indigo-600 dark:text-indigo-100",
-    "bg-red-200 border-red-400 text-red-900 dark:bg-red-800 dark:border-red-600 dark:text-red-100",
-    "bg-orange-200 border-orange-400 text-orange-900 dark:bg-orange-800 dark:border-orange-600 dark:text-orange-100",
+    "bg-green-200 border-green-400 text-green-900               dark:bg-green-800 dark:border-green-600 dark:text-green-100",
+    "bg-yellow-200 border-yellow-400 text-yellow-900            dark:bg-yellow-800 dark:border-yellow-600 dark:text-yellow-100",
+    "bg-purple-200 border-purple-400 text-purple-900            dark:bg-purple-800 dark:border-purple-600 dark:text-purple-100",
+    "bg-pink-200 border-pink-400 text-pink-900                  dark:bg-pink-800 dark:border-pink-600 dark:text-pink-100",
+    "bg-indigo-200 border-indigo-400 text-indigo-900            dark:bg-indigo-800 dark:border-indigo-600 dark:text-indigo-100",
+    "bg-red-200 border-red-400 text-red-900                     dark:bg-red-800 dark:border-red-600 dark:text-red-100",
+    "bg-orange-200 border-orange-400 text-orange-900            dark:bg-orange-800 dark:border-orange-600 dark:text-orange-100",
     "bg-cyan-200 border-cyan-400 text-cyan-900 dark:bg-cyan-800 dark:border-cyan-600 dark:text-cyan-100",
     "bg-teal-200 border-teal-400 text-teal-900 dark:bg-teal-800 dark:border-teal-600 dark:text-teal-100",
     "bg-lime-200 border-lime-400 text-lime-900 dark:bg-lime-800 dark:border-lime-600 dark:text-lime-100",
-    "bg-emerald-200 border-emerald-400 text-emerald-900 dark:bg-emerald-800 dark:border-emerald-600 dark:text-emerald-100",
+    "bg-emerald-200 border-emerald-400 text-emerald-900         dark:bg-emerald-800 dark:border-emerald-600 dark:text-emerald-100",
     "bg-rose-200 border-rose-400 text-rose-900 dark:bg-rose-800 dark:border-rose-600 dark:text-rose-100",
-    "bg-fuchsia-200 border-fuchsia-400 text-fuchsia-900 dark:bg-fuchsia-800 dark:border-fuchsia-600 dark:text-fuchsia-100",
-    "bg-violet-200 border-violet-400 dark:bg-violet-800 dark:border-violet-600",
-    "bg-sky-200 border-sky-400 dark:bg-sky-800 dark:border-sky-600",
-    "bg-amber-200 border-amber-400 dark:bg-amber-800 dark:border-amber-600",
-    "bg-slate-200 border-slate-400 dark:bg-slate-800 dark:border-slate-600",
+    "bg-fuchsia-200 border-fuchsia-400 text-fuchsia-900         dark:bg-fuchsia-800 dark:border-fuchsia-600 dark:text-fuchsia-100",
+    "bg-violet-200 border-violet-400 dark:bg-violet-800         dark:border-violet-600",
+    "bg-sky-200 border-sky-400 dark:bg-sky-800                  dark:border-sky-600",
+    "bg-amber-200 border-amber-400 dark:bg-amber-800            dark:border-amber-600",
+    "bg-slate-200 border-slate-400 dark:bg-slate-800            dark:border-slate-600",
 ];
 
 const LOCAL_STORAGE_KEY = "time-tracker-tasks";
@@ -702,10 +702,7 @@ export default function TimeTracker() {
 
             // Skip weekends if weekdaysOnly is enabled
             if (weekdaysOnly && isWeekend(nextDate)) {
-                // Find next weekday
-                while (isWeekend(nextDate)) {
-                    nextDate = addDays(nextDate, 1);
-                }
+                continue; // Skip entirely
             }
 
             const dateStr  = format(nextDate, "yyyy-MM-dd");
@@ -862,10 +859,9 @@ export default function TimeTracker() {
                     );
                 }
 
+                // Skip weekends if weekdaysOnly is enabled
                 if (taskData.weekdaysOnly && isWeekend(nextDate)) {
-                    while (isWeekend(nextDate)) {
-                        nextDate = addDays(nextDate, 1);
-                    }
+                    continue; // Skip entirely
                 }
 
                 const dateStr  = format(nextDate, "yyyy-MM-dd");
