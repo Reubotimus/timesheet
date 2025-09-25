@@ -9,6 +9,7 @@ import { TaskSidebar } from "@/components/task-sidebar";
 import { CreateTaskModal } from "@/components/create-task-modal";
 import { Header } from "@/components/header";
 import { Instructions } from "@/components/instructions";
+import { FeatureAnnouncement } from "@/components/feature-announcement";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 
@@ -84,12 +85,14 @@ export default function TimeTracker() {
     const gridRef                         = useRef<HTMLDivElement | null>(null);
     const titleInputRef                   = useRef<HTMLInputElement>(null);
 
-    const [templates, setTemplates]             = useState<TaskTemplate[]>([]);
-    const [theme, setTheme]                     = useState<"light" | "dark">("light");
-    const [repeatCount, setRepeatCount]         = useState<number>(0);
-    const [repeatEvery, setRepeatEvery]         = useState<"day" | "week">("day");
-    const [weekdaysOnly, setWeekdaysOnly]       = useState<boolean>(false);
-    const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+    const [templates, setTemplates]                             = useState<TaskTemplate[]>([]);
+    const [theme, setTheme]                                     = useState<"light" | "dark">("light");
+    const [repeatCount, setRepeatCount]                         = useState<number>(0);
+    const [repeatEvery, setRepeatEvery]                         = useState<"day" | "week">("day");
+    const [weekdaysOnly, setWeekdaysOnly]                       = useState<boolean>(false);
+    const [showCreateModal, setShowCreateModal]                 = useState<boolean>(false);
+    const [showFeatureAnnouncement, setShowFeatureAnnouncement] =
+        useState<boolean>(false);
 
     // Undo/Redo history management
     const [taskHistory, setTaskHistory]   = useState<Task[][]>([]);
@@ -112,6 +115,20 @@ export default function TimeTracker() {
             // Initialize with empty history
             setTaskHistory([[]]);
             setHistoryIndex(0);
+        }
+    }, []);
+
+    // Check for first visit and show feature announcement
+    useEffect(() => {
+        const hasSeenAnnouncement = localStorage.getItem(
+            "timesheet-feature-announcement-seen",
+        );
+        if (!hasSeenAnnouncement) {
+            // Small delay to ensure the app is fully loaded
+            const timer = setTimeout(() => {
+                setShowFeatureAnnouncement(true);
+            }, 1000);
+            return () => clearTimeout(timer);
         }
     }, []);
 
@@ -932,6 +949,30 @@ export default function TimeTracker() {
         // no-op; modal handles applying template locally
     };
 
+    const handleCloseFeatureAnnouncement = () => {
+        setShowFeatureAnnouncement(false);
+        localStorage.setItem("timesheet-feature-announcement-seen", "true");
+    };
+
+    const handleTryDemo = () => {
+        // Create a demo task for the user to undo
+        const demoTask: Task = {
+            id         : "demo-task-" + Date.now(),
+            startSlot  : 20,                                                   // 10:00 AM
+            endSlot    : 22,                                                   // 10:30 AM
+            title      : "Demo Task (Try Ctrl+Z to undo!)",
+            description: "This is a demo task to showcase the undo feature",
+            colorIndex : 0,
+            date       : format(selectedDate, "yyyy-MM-dd"),
+        };
+
+        setTasks((prev: Task[]) => {
+            const newTasks = [...prev, demoTask];
+            saveToHistory(newTasks);
+            return newTasks;
+        });
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
             <Header
@@ -1039,6 +1080,12 @@ export default function TimeTracker() {
                 titleInputRef    = {
                     titleInputRef as React.RefObject<HTMLInputElement>
                 }
+            />
+
+            <FeatureAnnouncement
+                isOpen    = {showFeatureAnnouncement}
+                onClose   = {handleCloseFeatureAnnouncement}
+                onTryDemo = {handleTryDemo}
             />
         </div>
     );
